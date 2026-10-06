@@ -1,0 +1,4 @@
+**
+!backend/counterproof/__init__.py
+!backend/counterproof/targets/**
+!backend/counterproof/runner/**

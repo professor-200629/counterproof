@@ -1,0 +1,206 @@
+{
+  "format": "counterproof.local-e2e/v1",
+  "network": "anvil-local (chain 31337, --network monad) - NOT Monad testnet",
+  "note": "All transactions are on a disposable local chain. Keys are anvil's public dev keys.",
+  "result": "pass",
+  "steps": [
+    {
+      "step": "deploy",
+      "t": 1791288787,
+      "contract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "chain_id": 31337,
+      "network": "anvil-local (--network monad), not Monad testnet"
+    },
+    {
+      "step": "config",
+      "t": 1791288799,
+      "network": "Local anvil chain (31337) - not Monad testnet",
+      "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "isolation": true
+    },
+    {
+      "step": "fund",
+      "t": 1791288799,
+      "challenge": 1,
+      "onchain_id": "1",
+      "tx": "0xca5193a017e551be15391a82cf45a0f470653cac94b17e1d0861d2bf730fc265",
+      "block": 2,
+      "reward_wei": 10000000000000000,
+      "network": "anvil-local 31337 (not Monad)",
+      "spec_digest": "sha256:ae033164f146f63ae712e282c58a498b747d0b2f79bc1e21ff2f2d0e25b2e5df"
+    },
+    {
+      "step": "search",
+      "t": 1791288801,
+      "strategy": "sequence-explorer",
+      "status": "candidate_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [
+        "R1"
+      ],
+      "duration_ms": 850
+    },
+    {
+      "step": "search",
+      "t": 1791288801,
+      "strategy": "retry-replay",
+      "status": "candidate_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [
+        "R3"
+      ],
+      "duration_ms": 409
+    },
+    {
+      "step": "search",
+      "t": 1791288802,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 461
+    },
+    {
+      "step": "commit",
+      "t": 1791288802,
+      "submission_id": "0x8f76173a340fa574a94c8b851ffb5d3b0a2f4b624211237b181154ccdffac254",
+      "tx": "0x3982a7a91cb10f2d0b73c5c1bcbea6e7c35eff765f438ab6c415b3159007ab35",
+      "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+    },
+    {
+      "step": "replay",
+      "t": 1791288803,
+      "outcome": "verified_violation",
+      "evidence": "sha256:4c0ed1c9cfe4264598473b2b2327722d3e3df0d9900db256ee63ae5296de27df",
+      "replays": 2
+    },
+    {
+      "step": "duplicate-submit",
+      "t": 1791288803,
+      "same_evaluation": true,
+      "duplicate": true
+    },
+    {
+      "step": "attest",
+      "t": 1791288807,
+      "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "expiry": 1791289987,
+      "signature": "0x3c55eff17e9b596ef2..."
+    },
+    {
+      "step": "negative: altered recipient",
+      "t": 1791288808,
+      "reverted": true
+    },
+    {
+      "step": "settle",
+      "t": 1791288808,
+      "tx": "0x5023b0180602d1ace490a54ee298b493743ed059e18f5f36f580d56ad5970c96",
+      "block": 5,
+      "relayed_by": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "reward_wei": "10000000000000000",
+      "status": "confirmed"
+    },
+    {
+      "step": "negative: settle twice",
+      "t": 1791288808,
+      "reverted": true
+    },
+    {
+      "step": "withdraw",
+      "t": 1791288808,
+      "tx": "0x5d9af15941e14770cf59c152b6ef112cbcfb204631ee74b31d28a2fe9a5dee65",
+      "amount_wei": "10000000000000000",
+      "balance_delta_plus_fee": 10000000000000000,
+      "fee_billed_on_gas_limit": 99326432843204,
+      "gas_limit": 68131,
+      "gas_used": 52870
+    },
+    {
+      "step": "negative: submit after settlement",
+      "t": 1791288808,
+      "status": 400,
+      "detail": "challenge is settled; submissions are closed"
+    },
+    {
+      "step": "retest repaired 1.1.0",
+      "t": 1791288810,
+      "outcome": "not_reproduced",
+      "evidence": "sha256:8b8ff2d6bef725ef048f0bc8d0c68026ff1b0863210699218d011c3f2953e6ef",
+      "spec": "sha256:db69f40760ae855ee4498a4e34190494c4931247d5a292281bc209b69e5b81d6"
+    },
+    {
+      "step": "export",
+      "t": 1791288810,
+      "files": [
+        "regression-20261006-174302.json",
+        "test_regression_20261006_174302.py"
+      ]
+    },
+    {
+      "step": "fund",
+      "t": 1791288810,
+      "challenge": 2,
+      "onchain_id": "2",
+      "tx": "0xd34b9bf2cebad7c55bdf3e3821d4b9539138a61e5cab417ee4a9ede9c4abd85f",
+      "block": 8,
+      "reward_wei": 5000000000000000,
+      "network": "anvil-local 31337 (not Monad)",
+      "spec_digest": "sha256:88ad36488351ad3962f5efe02c7f219e8e6c983592c594c80ca9ecabe39769f0"
+    },
+    {
+      "step": "search",
+      "t": 1791288812,
+      "strategy": "sequence-explorer",
+      "status": "no_violation_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [],
+      "duration_ms": 891
+    },
+    {
+      "step": "search",
+      "t": 1791288812,
+      "strategy": "retry-replay",
+      "status": "no_violation_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 389
+    },
+    {
+      "step": "search",
+      "t": 1791288812,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 393
+    },
+    {
+      "step": "negative: refund before window",
+      "t": 1791288812,
+      "reverted": true
+    },
+    {
+      "step": "refund",
+      "t": 1791288813,
+      "tx": "0x92fdcf0ab5cb0a012e8c9fdad43d43e03ebcc93ef983ab4238e5076638935716",
+      "publisher": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "reward_wei": "5000000000000000"
+    },
+    {
+      "step": "final",
+      "t": 1791288813,
+      "challenge_statuses": {
+        "2": "refunded",
+        "1": "settled"
+      }
+    }
+  ]
+}

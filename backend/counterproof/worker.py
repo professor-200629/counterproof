@@ -214,6 +214,7 @@ class Worker:
 
 
 def main() -> None:
+    os.environ.setdefault("COUNTERPROOF_ROLE", "worker")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     w = Worker()
     log.info("worker %s started", w.name)

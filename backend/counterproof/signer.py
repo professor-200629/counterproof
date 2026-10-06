@@ -95,8 +95,9 @@ def _db() -> sqlite3.Connection:
 
 
 def create_app() -> FastAPI:
+    os.environ.setdefault("COUNTERPROOF_ROLE", "signer")
+    token = settings().signer_token  # loads .env (signer role) before the key is read
     key = os.environ.get("EVALUATOR_PRIVATE_KEY")
-    token = settings().signer_token
     app = FastAPI(title="CounterProof evaluator signer", docs_url=None, redoc_url=None, openapi_url=None)
 
     def auth(authorization: str | None = Header(default=None)) -> None:

@@ -14,17 +14,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+PROVIDER_KEYS = {"GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"}
+# Which secrets each process may load from .env. Everything else that looks secret is
+# skipped, so e.g. the API and worker never hold the evaluator's signing key.
+ROLE_SECRETS = {
+    "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"},
+    "api": {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
+    "worker": {"COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
+    "script": None,  # deployment/key scripts may read everything
+}
+SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "MNEMONIC", "PASSWORD")
+
+
+def role() -> str:
+    r = os.environ.get("COUNTERPROOF_ROLE", "api")
+    return r if r in ROLE_SECRETS else "api"
+
+
 def _load_dotenv() -> None:
-    """Minimal .env loader (KEY=VALUE lines); real environment variables win."""
+    """Minimal .env loader (KEY=VALUE lines); real environment variables win. Secrets are
+    loaded only if this process's role needs them (COUNTERPROOF_ROLE)."""
     p = Path(os.environ.get("COUNTERPROOF_ENV_FILE", ROOT / ".env"))
     if not p.exists():
         return
+    allowed = ROLE_SECRETS[role()]
     for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if not v:
+            continue
+        if allowed is not None and any(h in k.upper() for h in SECRET_HINTS) and k not in allowed:
+            continue
+        os.environ.setdefault(k, v)
 
 
 @dataclass(frozen=True)

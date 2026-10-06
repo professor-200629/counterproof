@@ -412,8 +412,11 @@ def test_{data["rule"]["template"].replace(".", "_")}_does_not_regress():
 
 
 def main() -> None:
+    import os
+
     import uvicorn
 
+    os.environ.setdefault("COUNTERPROOF_ROLE", "api")
     uvicorn.run("counterproof.api:app", host="127.0.0.1", port=settings().api_port, log_level="info")
 
 

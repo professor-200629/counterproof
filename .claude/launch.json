@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "counterproof-local",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["scripts/dev.py", "local"],
+      "port": 3000
+    },
+    {
+      "name": "counterproof-api-only",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["scripts/dev.py", "local", "--no-web"],
+      "port": 8010
+    }
+  ]
+}
