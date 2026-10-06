@@ -12,6 +12,7 @@ PATTERNS = [
     re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}"),  # OpenAI
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),     # Anthropic
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._-]{16,}"),
+    re.compile(r"org_[A-Za-z0-9]{16,}"),            # provider organisation ids
 ]
 
 

@@ -182,3 +182,14 @@ def test_interrupted_jobs_are_recovered_after_restart(client):
     assert changed[0]["to"] == "failed"
     r = client.get(f"/api/runs/{run['id']}").json()
     assert r["status"] == "failed" and "interrupted" in r["error"]
+
+
+def test_a_search_that_tested_nothing_is_failed_not_no_violation(client, monkeypatch):
+    from counterproof.strategies import harness
+
+    ch, _ = new_challenge(client)
+    run = client.post(f"/api/challenges/{ch['id']}/runs", json={"strategy": "retry-replay", "budget": {"max_wall_seconds": 0}}).json()
+    drain()
+    r = client.get(f"/api/runs/{run['id']}").json()
+    assert r["record"]["sequences_tried"] == 0
+    assert r["status"] == "failed" and "no sequence was tested" in r["record"]["termination"]

@@ -200,6 +200,13 @@ class ChatClient:
                                       "completion_tokens": int(usage.get("completion_tokens") or 0)}}
                 last = f"HTTP {r.status_code}: {redact(r.text[:300])}"
                 if r.status_code == 429:
+                    daily = any(s in r.text for s in ("per day (TPD)", "per day (RPD)", "tokens per day", "requests per day"))
+                    if daily or _retry_after(r) > 10 * 60:
+                        # A daily quota will not clear by waiting a minute: say so and stop.
+                        mins = int(_retry_after(r) // 60) + 1
+                        last = (f"daily quota exhausted for {self.provider}/{self.model} (provider says retry in about "
+                                f"{mins} min): {redact(r.text[:240])}")
+                        break
                     rate_waits += 1
                     if rate_waits > MAX_RATE_LIMIT_WAITS:
                         break

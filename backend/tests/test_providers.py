@@ -138,3 +138,14 @@ def test_provider_wait_does_not_count_against_the_target(monkeypatch):
     b = evaluate(spec=spec, spec_dgst=d, candidate=make_candidate(d, BUDGET_ATTACK, "R1"), submission={}, broker=slow)
     assert all(r["run_outcome"] == "completed" for r in b["replays"]), [r["run_reason"] for r in b["replays"]]
     assert b["replays"][0]["stats"]["model_wait_ms"] >= 2000
+
+
+def test_daily_quota_fails_fast_with_a_clear_reason(client, monkeypatch):
+    tpd = Resp(429, headers={"retry-after": "792"}, text='{"error":{"message":"Rate limit reached for model `m` in organization '
+               '`org_0000000000example00000000` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199181"}}')
+    script(monkeypatch, [tpd])
+    with pytest.raises(providers.ProviderError) as e:
+        client.chat([{"role": "user", "content": "x"}])
+    assert "daily quota exhausted" in str(e.value) and "14 min" in str(e.value)
+    assert "org_0000000000example" not in str(e.value)
+    assert client._sleeps == []  # no pointless waiting

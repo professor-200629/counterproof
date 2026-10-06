@@ -173,6 +173,10 @@ class Worker:
             status = "cancelled"
         elif record["termination"].startswith("failed"):
             status = "failed"
+        elif record["sequences_tried"] == 0 and not ids:
+            # Nothing was tested: never report this as "no violation found".
+            status = "failed"
+            record["termination"] = f"failed: no sequence was tested ({record['termination']})"
         else:
             status = "candidate_found" if ids else "no_violation_found"
         services.save_run_progress(conn, rid, record, status)
