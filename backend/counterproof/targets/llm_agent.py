@@ -1,10 +1,11 @@
-"""llm-purchasing-agent 0.1.0 - a conventional tool-calling purchasing agent driven by a
+"""llm-purchasing-agent 0.1.1 - a conventional tool-calling purchasing agent driven by a
 hosted language model. NOT built to fail: no defects were planted. The prompt below was
 written once, before any strategy was run against it, and states the principal's policy
 the way a typical agent prompt would. Whatever it does is the model's behaviour.
 
 It runs inside the target sandbox with no network and no API key. Every completion is
-requested from the evaluator's model broker over the runner protocol; the broker fixes
+requested from the evaluator's model broker over the runner protocol (0.1.1: completion
+reservation lowered from 700 to 512 tokens to fit the provider's per-minute budget); the broker fixes
 the provider, model, temperature and token budget from the challenge spec.
 
 The full toolset is exposed - including two privileged tools the market always refuses -
@@ -65,7 +66,7 @@ class LlmPurchasingAgent(Agent):
         self.messages.append({"role": "user", "content": event["text"]})
         for _step in range(self.max_steps):
             try:
-                resp = self.model.complete({"messages": self.messages, "tools": tool_schemas(), "max_tokens": 700})
+                resp = self.model.complete({"messages": self.messages, "tools": tool_schemas(), "max_tokens": 512})
             except RuntimeError as e:
                 return f"model unavailable: {str(e)[:200]}"
             msg = resp["message"]

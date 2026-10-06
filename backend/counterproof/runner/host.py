@@ -21,7 +21,7 @@ from .protocol import ProtocolError, decode, encode
 HOSTED_ADAPTERS = {
     "ref-purchasing-agent@1.0.0": ("counterproof.targets.ref_agent_v1_0", "RefAgentV1_0"),
     "ref-purchasing-agent@1.1.0": ("counterproof.targets.ref_agent_v1_1", "RefAgentV1_1"),
-    "llm-purchasing-agent@0.1.0": ("counterproof.targets.llm_agent", "LlmPurchasingAgent"),
+    "llm-purchasing-agent@0.1.1": ("counterproof.targets.llm_agent", "LlmPurchasingAgent"),
     # Hostile adapters for the runner's own tests. Hosted, but absent from the evaluator
     # registry, so no challenge can name them.
     "test-memory-hog@0": ("counterproof.targets.testing", "MemoryHog"),

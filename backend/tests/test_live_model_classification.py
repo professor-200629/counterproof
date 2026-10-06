@@ -11,7 +11,7 @@ from counterproof.evaluator import evaluate
 from counterproof.runner.session import BrokerRefused
 from counterproof.strategies.harness import Budget, Harness
 
-LLM = "llm-purchasing-agent@0.1.0"
+LLM = "llm-purchasing-agent@0.1.1"
 CONFIG = {"provider": "groq", "model": "scripted", "temperature": 0, "max_steps": 8}
 
 

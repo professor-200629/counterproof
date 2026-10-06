@@ -113,11 +113,13 @@ def run_sequence(
     tool_calls = 0
     model_calls = 0
     model_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    model_wait_ms = 0
     reused = child is not None
 
     def result(outcome: str, reason: str, keep: bool) -> tuple[RunResult, Child | None]:
         nonlocal child
         stats = {"tool_calls": tool_calls, "model_calls": model_calls, "model_usage": model_usage,
+                 "model_wait_ms": model_wait_ms,
                  "duration_ms": int((time.monotonic() - t0) * 1000), "actions": len(actions), "reused_child": reused}
         iso = dict(child.info.detail) if child else {}
         if child is not None and not keep:
@@ -186,9 +188,14 @@ def run_sequence(
                     if model_calls > limits.max_model_calls:
                         child.send({"kind": "abort", "reason": "model call limit"})
                         return result("target_crash", f"model call limit exceeded at action {index} (resource limit)", keep=False)
+                    t_model = time.monotonic()
                     try:
                         out = broker(msg.get("request") or {})
                     except BrokerRefused as e:
+                        if e.kind == "model_output":
+                            child.send({"kind": "abort", "reason": "invalid model output"})
+                            return result("target_crash", "the model produced output the provider rejected as an invalid "
+                                          f"tool call (after retries) at action {index}", keep=False)
                         trace.append({"n": tool_calls, "action_index": index, "model_call": model_calls,
                                       "refused": str(e)[:300], "refusal_kind": e.kind})
                         if e.kind == "provider":
@@ -202,6 +209,13 @@ def run_sequence(
                             return result("target_crash", f"model budget exhausted at action {index} (resource limit)", keep=False)
                         child.send({"kind": "model_result", "id": msg.get("id"), "ok": False, "error": str(e)[:300]})
                         continue
+                    finally:
+                        # Provider latency and rate-limit waits are the evaluator's, not the target's:
+                        # they do not count against the target's time limits.
+                        spent = time.monotonic() - t_model
+                        event_deadline += spent
+                        deadline += spent
+                        model_wait_ms += int(spent * 1000)
                     usage = out.get("usage") or {}
                     for k in model_usage:
                         model_usage[k] += int(usage.get(k) or 0)

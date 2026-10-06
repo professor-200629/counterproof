@@ -118,7 +118,7 @@ def test_live_model_target_requires_explicit_configuration(client, monkeypatch):
     from counterproof.config import settings
 
     settings.cache_clear()
-    ch, _ = new_challenge(client, "llm-purchasing-agent@0.1.0")
+    ch, _ = new_challenge(client, "llm-purchasing-agent@0.1.1")
     r = client.post(f"/api/challenges/{ch['id']}/runs", json={"strategy": "sequence-explorer"})
     assert r.status_code == 409 and "COUNTERPROOF_LLM_PROVIDER" in r.json()["detail"]
 

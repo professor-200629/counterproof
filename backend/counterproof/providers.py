@@ -15,6 +15,7 @@ targets ask the broker (over the runner protocol) and the broker makes the HTTP 
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -32,7 +33,13 @@ PROVIDERS = {
 }
 MAX_COMPLETION_TOKENS = 900
 TIMEOUT_S = 60
-MAX_RETRIES = 2
+MAX_RETRIES = 2            # network errors and 5xx
+MAX_RATE_LIMIT_WAITS = 8   # 429s: wait as long as the provider asks (capped), then retry
+MAX_RATE_LIMIT_SLEEP = 65.0
+MAX_GENERATION_RETRIES = 2  # 400 "tool call validation failed": the model's output was invalid
+# Per-minute token limit used for client-side pacing (Groq free tier: 8,000 TPM per model,
+# read from x-ratelimit-limit-tokens on 2026-10-06). Groq counts max_tokens as reserved.
+DEFAULT_TPM = {"groq": 8000}
 
 
 class MissingCredential(Exception):
@@ -40,7 +47,54 @@ class MissingCredential(Exception):
 
 
 class ProviderError(Exception):
-    pass
+    """kind: "unavailable" (network, 5xx, auth, rate limit not cleared) or "model_output"
+    (the provider rejected what the model generated, e.g. an invalid tool call)."""
+
+    def __init__(self, message: str, kind: str = "unavailable"):
+        super().__init__(message)
+        self.kind = kind
+
+
+class _Pacer:
+    """Process-wide sliding-window token pacing per provider/model."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.windows: dict[str, list[tuple[float, int]]] = {}
+
+    def wait(self, key: str, tpm: int, tokens: int) -> float:
+        waited = 0.0
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                w = [(t, n) for t, n in self.windows.get(key, []) if now - t < 60]
+                used = sum(n for _, n in w)
+                if used + tokens <= tpm or not w:
+                    w.append((now, tokens))
+                    self.windows[key] = w
+                    return waited
+                pause = 60 - (now - w[0][0]) + 0.25
+            time.sleep(pause)
+            waited += pause
+
+
+PACER = _Pacer()
+
+
+def _retry_after(r) -> float:
+    import re as _re
+
+    h = r.headers.get("retry-after")
+    if h:
+        try:
+            return float(h)
+        except ValueError:
+            pass
+    m = _re.search(r"try again in ([0-9.]+)(ms|s)", r.text)
+    if m:
+        v = float(m.group(1))
+        return v / 1000 if m.group(2) == "ms" else v
+    return 5.0
 
 
 def provider_status() -> list[dict]:
@@ -59,6 +113,8 @@ class ChatClient:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     errors: list[str] = field(default_factory=list)
+    paced_seconds: float = 0.0
+    rate_limited_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         if self.provider not in PROVIDERS:
@@ -82,12 +138,24 @@ class ChatClient:
             body["reasoning_effort"] = "low"
         url = PROVIDERS[self.provider]["base"] + "/chat/completions"
         last = ""
-        for attempt in range(MAX_RETRIES + 1):
+        kind = "unavailable"
+        tpm = int(os.environ.get("COUNTERPROOF_LLM_TPM") or DEFAULT_TPM.get(self.provider, 0))
+        estimate = len(json.dumps(body)) // 3 + body["max_tokens"]
+        attempt, failures, rate_waits, gen_retries = 0, 0, 0, 0
+        while True:
+            attempt += 1
+            if tpm:
+                self.paced_seconds += PACER.wait(f"{self.provider}/{self.model}", tpm, estimate)
             try:
                 r = httpx.post(url, json=body, timeout=TIMEOUT_S,
                                headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"})
             except httpx.HTTPError as e:
                 last = f"network error: {type(e).__name__}"
+                failures += 1
+                if failures > MAX_RETRIES:
+                    break
+                time.sleep(1.5 * failures)
+                continue
             else:
                 if r.status_code == 200:
                     data = r.json()
@@ -104,16 +172,30 @@ class ChatClient:
                             "usage": {"prompt_tokens": int(usage.get("prompt_tokens") or 0),
                                       "completion_tokens": int(usage.get("completion_tokens") or 0)}}
                 last = f"HTTP {r.status_code}: {redact(r.text[:300])}"
-                if r.status_code in (400, 401, 403, 404):
-                    break
-                if r.status_code == 429 or r.status_code >= 500:
-                    wait = min(float(r.headers.get("retry-after") or 2 * (attempt + 1)), 20.0)
-                    time.sleep(wait)
+                if r.status_code == 429:
+                    rate_waits += 1
+                    if rate_waits > MAX_RATE_LIMIT_WAITS:
+                        break
+                    pause = min(_retry_after(r) + 0.5, MAX_RATE_LIMIT_SLEEP)
+                    self.rate_limited_seconds += pause
+                    time.sleep(pause)
+                    continue
+                if r.status_code == 400 and any(s in r.text for s in ("tool_use_failed", "Tool call validation failed",
+                                                                      "Parsing failed", "failed_generation")):
+                    gen_retries += 1
+                    if gen_retries > MAX_GENERATION_RETRIES:
+                        kind = "model_output"
+                        break
+                    continue
+                if r.status_code >= 500:
+                    failures += 1
+                    if failures > MAX_RETRIES:
+                        break
+                    time.sleep(2.0 * failures)
                     continue
                 break
-            time.sleep(1.5 * (attempt + 1))
         self.errors.append(last)
-        raise ProviderError(f"{self.provider}/{self.model} failed after {attempt + 1} attempt(s): {last}")
+        raise ProviderError(f"{self.provider}/{self.model} failed after {attempt} attempt(s): {last}", kind=kind)
 
 
 class ModelBroker:
@@ -142,7 +224,7 @@ class ModelBroker:
             return self.client.chat(msgs, tools=request.get("tools"), temperature=self.temperature,
                                     max_tokens=int(request.get("max_tokens") or 600))
         except ProviderError as e:
-            raise BrokerRefused(str(e), kind="provider") from e
+            raise BrokerRefused(str(e), kind="model_output" if e.kind == "model_output" else "provider") from e
 
 
 def broker_for_spec(spec: dict, budget) -> ModelBroker | None:

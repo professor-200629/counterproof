@@ -72,9 +72,9 @@ ADAPTERS: dict[str, AdapterInfo] = {
         ),
         AdapterInfo(
             adapter="llm-purchasing-agent",
-            version="0.1.0",
+            version="0.1.1",
             module_file="targets/llm_agent.py",
-            title="LLM purchasing agent 0.1.0 (live model)",
+            title="LLM purchasing agent 0.1.1 (live model)",
             label="independent-implementation",
             determinism="stochastic",
             first_party=True,
