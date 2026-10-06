@@ -25,6 +25,12 @@ OUT = ROOT / "web" / "public" / "snapshot"
 SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "MNEMONIC")
 
 
+def snapshot_file(api_path: str, suffix: str = ".json") -> Path:
+    """/api/evidence/sha256:ab -> api/evidence/sha256_ab.json (':' is not allowed in Windows
+    file names). The web app's snapshot mode applies the same mapping."""
+    return Path(api_path.lstrip("/").replace(":", "_") + suffix)
+
+
 def secret_values() -> set[str]:
     """Actual secret values from .env and the environment (never printed)."""
     import os
@@ -52,7 +58,7 @@ def main() -> int:
         text = json.dumps(data, indent=1)
         if any(v in text for v in secrets):
             raise SystemExit(f"refusing to export {path}: it contains a secret value")
-        p = OUT / (path.lstrip("/") + ".json")
+        p = OUT / snapshot_file(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
         saved.append(path)
@@ -63,15 +69,36 @@ def main() -> int:
         save(path, r.json())
         return r.json()
 
+    only = None
+    if "--challenges" in sys.argv:
+        only = {int(x) for x in sys.argv[sys.argv.index("--challenges") + 1].split(",")}
     cfg = get("/api/config")
-    for p in ("/api/overview", "/api/targets", "/api/rule-templates", "/api/strategies"):
+    for p in ("/api/targets", "/api/rule-templates", "/api/strategies"):
         get(p)
-    for ch in get("/api/challenges"):
+    all_challenges = c.get("/api/challenges").json()
+    chosen = [ch for ch in all_challenges if only is None or ch["id"] in only]
+    save("/api/challenges", chosen)
+    overview = c.get("/api/overview").json()
+    if only is not None:
+        overview["activity"] = [a for a in overview["activity"] if a.get("challenge_id") in only]
+        overview["challenges"] = len(chosen)
+        for k, st in (("funded", "funded"), ("settled", "settled")):
+            overview[k] = sum(1 for ch in chosen if ch["status"] == st)
+        overview["verified_violations"] = sum(ch["counts"]["verified"] for ch in chosen)
+        overview["active_runs"] = 0
+    save("/api/overview", overview)
+    for ch in chosen:
         view = get(f"/api/challenges/{ch['id']}")
         get(f"/api/challenges/{ch['id']}/settlement")
         get(f"/api/specs/{view['spec_digest']}")
         for reg in get(f"/api/challenges/{ch['id']}/regressions"):
             get(f"/api/regressions/{reg['id']}")
+            get(f"/api/regressions/{reg['id']}/export")
+            py = c.get(f"/api/regressions/{reg['id']}/export?format=pytest")
+            if py.status_code == 200:
+                target = OUT / snapshot_file(f"/api/regressions/{reg['id']}/export", ".pytest.txt")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(py.text, encoding="utf-8")
             if reg.get("evidence_digest"):
                 get(f"/api/evidence/{reg['evidence_digest']}")
                 get(f"/api/specs/{reg['spec_digest']}")
@@ -83,9 +110,12 @@ def main() -> int:
             get(f"/api/evaluations/{ev['id']}")
             if ev.get("evidence_digest"):
                 get(f"/api/evidence/{ev['evidence_digest']}")
-    manifest = {"format": "counterproof.snapshot/v1", "taken_at": int(time.time()), "api": API,
-                "network": cfg["network"], "network_label": cfg["network_label"], "contract": cfg["chain"]["contract"],
-                "files": len(saved), "note": "Recorded responses from the evaluator. Read-only; nothing here is executed live."}
+    manifest = {"format": "counterproof.snapshot/v1", "taken_at": int(time.time()),
+                "network": cfg["network"], "network_label": cfg["network_label"], "chain_id": cfg["chain"]["chain_id"],
+                "contract": cfg["chain"]["contract"], "explorer_tx_url": cfg["chain"]["explorer_tx_url"],
+                "challenges_included": [ch["id"] for ch in chosen], "challenges_on_evaluator": len(all_challenges),
+                "files": len(saved),
+                "note": "Recorded responses from the CounterProof evaluator. Read-only: nothing on this site runs live."}
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     print(f"exported {len(saved)} responses to {OUT.relative_to(ROOT)} ({cfg['network_label']})")
     return 0
