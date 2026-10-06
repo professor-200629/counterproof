@@ -1,0 +1,30 @@
+# secrets and local state
+.env
+.env.*
+!.env.example
+*.key
+keys/
+data/
+!backend/counterproof/data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# node / next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+
+# misc
+.DS_Store
+*.log
