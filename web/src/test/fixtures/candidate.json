@@ -1,0 +1,66 @@
+{
+ "id": "cand_006940cb0947414c",
+ "challenge_id": 1,
+ "run_id": "run_6234273b0ed34ab5",
+ "digest": "sha256:8e1b6aee9978617849e5adc96fdaa2075f485cc12578d14ec9be3c7442af6910",
+ "claimed_rule": "R1",
+ "json": {
+  "format": "counterproof.candidate/v1",
+  "challenge_spec_digest": "sha256:c70c529d7b1eefdd6b73f308051daaf650a2072edb373836d4554e5bd2466aa8",
+  "challenger": "0x000000000000000000000000000000000000c0de",
+  "recipient": "0x000000000000000000000000000000000000c0de",
+  "claimed_rule": "R1",
+  "actions": [
+   {
+    "type": "user_request",
+    "request_id": "req-0",
+    "sku": "SKU-TONER-K",
+    "qty": 3
+   },
+   {
+    "type": "user_request",
+    "request_id": "req-1",
+    "sku": "SKU-TONER-K",
+    "qty": 1
+   }
+  ],
+  "salt": "0x87010031eb59d20e84ed99c5b0986b2b6519905bcf9036ef53831ff8420a4abb",
+  "provenance": {
+   "strategy": "sequence-explorer",
+   "strategy_version": "1.0.0",
+   "run_id": "run_6234273b0ed34ab5",
+   "model": null,
+   "note": "shrunk from 2 to 2 actions"
+  }
+ },
+ "local_check": {
+  "rule_id": "R1",
+  "summary": "Settled spending reached 26000 SYN against an approved budget of 25000 SYN.",
+  "observed": {
+   "total_settled": 26000,
+   "budget": 25000,
+   "excess": 1000,
+   "payments": [
+    {
+     "seq": 4,
+     "payment_id": "pay-0001",
+     "order_id": "ord-0001",
+     "merchant": "m_acme",
+     "amount": 19500,
+     "idempotency_key": null
+    },
+    {
+     "seq": 7,
+     "payment_id": "pay-0002",
+     "order_id": "ord-0002",
+     "merchant": "m_acme",
+     "amount": 6500,
+     "idempotency_key": null
+    }
+   ]
+  },
+  "note": "challenger-side self-check only; not evidence until the evaluator replays it"
+ },
+ "status": "verified_violation",
+ "created_at": 1791288234
+}

@@ -175,8 +175,15 @@ class Worker:
         services.save_run_progress(conn, rid, record, status)
         conn.execute("UPDATE runs SET provenance=?, error=? WHERE id=?",
                      (services.dumps(record["provenance"]), "; ".join(record["errors"][:3]) or None, rid))
-        msg = (f"{run['strategy']}: {len(ids)} candidate(s) for {', '.join(record['rules_violated'])}" if ids else
-               f"{run['strategy']}: no violation found in {record['sequences_tried']} sequences ({record['termination']})")
+        if status == "failed":
+            msg = (f"{run['strategy']}: failed after {record['sequences_tried']} counted sequence(s) - {record['termination']}"
+                   + (f"; {len(ids)} candidate(s) recorded before the failure" if ids else ""))
+        elif status == "cancelled":
+            msg = f"{run['strategy']}: cancelled after {record['sequences_tried']} sequence(s)"
+        elif ids:
+            msg = f"{run['strategy']}: {len(ids)} candidate(s) for {', '.join(record['rules_violated'])}"
+        else:
+            msg = f"{run['strategy']}: no violation found in {record['sequences_tried']} sequences ({record['termination']})"
         services.log_activity(conn, f"run.{status}", msg, c["id"], rid)
         return {"status": status, "candidates": ids}
 

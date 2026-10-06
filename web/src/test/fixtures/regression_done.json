@@ -1,0 +1,62 @@
+{
+ "id": "reg_c516547c0b33493e",
+ "source_candidate_id": "cand_006940cb0947414c",
+ "source_challenge_id": 1,
+ "target_key": "ref-purchasing-agent@1.1.0",
+ "spec_digest": "sha256:f6664455e63d1e156a147c19441216c946582a27d0aabcd8c72dc4840bfab93e",
+ "job_id": "job_0d4f35a785d04c21",
+ "status": "not_reproduced",
+ "outcome": "not_reproduced",
+ "evidence_digest": "sha256:6c0d2b6fe0a02640447a483d71c9df4378df1f80dde23b0550744704da8b8c33",
+ "created_at": 1791288236,
+ "finished_at": 1791288236,
+ "job": {
+  "id": "job_0d4f35a785d04c21",
+  "kind": "regression",
+  "status": "done",
+  "params": {
+   "regression_id": "reg_c516547c0b33493e",
+   "candidate": {
+    "format": "counterproof.candidate/v1",
+    "challenge_spec_digest": "sha256:f6664455e63d1e156a147c19441216c946582a27d0aabcd8c72dc4840bfab93e",
+    "challenger": "0x000000000000000000000000000000000000c0de",
+    "recipient": "0x000000000000000000000000000000000000c0de",
+    "claimed_rule": "R1",
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-TONER-K",
+      "qty": 3
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-1",
+      "sku": "SKU-TONER-K",
+      "qty": 1
+     }
+    ],
+    "salt": "0x87010031eb59d20e84ed99c5b0986b2b6519905bcf9036ef53831ff8420a4abb",
+    "provenance": {
+     "strategy": "sequence-explorer",
+     "strategy_version": "1.0.0",
+     "run_id": "run_6234273b0ed34ab5",
+     "model": null,
+     "note": "regression replay of candidate sha256:8e1b6aee9978617849e5adc96fdaa2075f485cc12578d14ec9be3c7442af6910"
+    }
+   }
+  },
+  "result": {
+   "outcome": "not_reproduced"
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "sample",
+  "heartbeat_at": 1791288236,
+  "created_at": 1791288236,
+  "started_at": 1791288236,
+  "finished_at": 1791288236
+ }
+}

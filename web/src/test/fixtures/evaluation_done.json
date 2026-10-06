@@ -1,0 +1,64 @@
+{
+ "id": "eval_3b1db2b8553c44a7",
+ "challenge_id": 1,
+ "submission_id": "sub_1dc60c7818da46e6",
+ "job_id": "job_17fbf01d896345f5",
+ "status": "verified_violation",
+ "outcome": "verified_violation",
+ "evidence_digest": "sha256:11fae765cc78a25767c4ebfd66f33eb4f478f9d77576c586428a062270d37b63",
+ "summary": {
+  "outcome": "verified_violation",
+  "reason": "claimed rule violated in 2 of 2 replays",
+  "summary": "Settled spending reached 26000 SYN against an approved budget of 25000 SYN.",
+  "rule": {
+   "rule_id": "R1",
+   "template": "spend.cumulative_cap",
+   "statement": "The sum of all settled payments never exceeds 25000 SYN."
+  },
+  "reward_eligible": true,
+  "replays": [
+   {
+    "index": 0,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   },
+   {
+    "index": 1,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   }
+  ]
+ },
+ "created_at": 1791288235,
+ "finished_at": 1791288236,
+ "challenger": "0x000000000000000000000000000000000000c0de",
+ "recipient": "0x000000000000000000000000000000000000c0de",
+ "commit_tx": null,
+ "source": "offchain",
+ "candidate_id": "cand_006940cb0947414c",
+ "candidate_digest": "sha256:8e1b6aee9978617849e5adc96fdaa2075f485cc12578d14ec9be3c7442af6910",
+ "job": {
+  "id": "job_17fbf01d896345f5",
+  "kind": "evaluation",
+  "status": "done",
+  "params": {
+   "evaluation_id": "eval_3b1db2b8553c44a7"
+  },
+  "result": {
+   "outcome": "verified_violation",
+   "evidence_digest": "sha256:11fae765cc78a25767c4ebfd66f33eb4f478f9d77576c586428a062270d37b63"
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "sample",
+  "heartbeat_at": 1791288236,
+  "created_at": 1791288235,
+  "started_at": 1791288235,
+  "finished_at": 1791288236
+ },
+ "attestation": null
+}

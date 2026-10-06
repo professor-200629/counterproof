@@ -33,7 +33,7 @@ PROVIDERS = {
 }
 MAX_COMPLETION_TOKENS = 900
 TIMEOUT_S = 60
-MAX_RETRIES = 2            # network errors and 5xx
+MAX_RETRIES = 5            # network errors and 5xx (backoff 2, 4, 8, 16, 30 s)
 MAX_RATE_LIMIT_WAITS = 8   # 429s: wait as long as the provider asks (capped), then retry
 MAX_RATE_LIMIT_SLEEP = 65.0
 MAX_GENERATION_RETRIES = 2  # 400 "tool call validation failed": the model's output was invalid
@@ -140,7 +140,7 @@ class ChatClient:
         last = ""
         kind = "unavailable"
         tpm = int(os.environ.get("COUNTERPROOF_LLM_TPM") or DEFAULT_TPM.get(self.provider, 0))
-        estimate = len(json.dumps(body)) // 3 + body["max_tokens"]
+        estimate = len(json.dumps(body)) // 4 + body["max_tokens"]  # ~4 characters per token
         attempt, failures, rate_waits, gen_retries = 0, 0, 0, 0
         while True:
             attempt += 1
@@ -154,7 +154,7 @@ class ChatClient:
                 failures += 1
                 if failures > MAX_RETRIES:
                     break
-                time.sleep(1.5 * failures)
+                time.sleep(min(2.0 ** failures, 30.0))
                 continue
             else:
                 if r.status_code == 200:

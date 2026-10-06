@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+/*
+ * CounterProof theme tokens.
+ * Dark is the default; light follows prefers-color-scheme. One accent (blue) for
+ * interactive elements. Semantic colours:
+ *   ok   (green) observed passing check / not reproduced / confirmed tx
+ *   warn (amber) uncertainty / inconclusive / pending / awaiting
+ *   bad  (red)   verified violation / failed tx
+ * All text tokens meet WCAG AA (4.5:1) on canvas, surface and raised.
+ */
+:root {
+  color-scheme: dark;
+  --canvas: #0b0d10;
+  --surface: #111419;
+  --raised: #181c22;
+  --inset: #0d1014;
+  --line: #262b33;
+  --line-strong: #39404a;
+  /* Form control boundaries: >= 3:1 against canvas, surface, raised and inset (WCAG 1.4.11). */
+  --control: #6b7380;
+  --control-strong: #8a94a3;
+  --fg: #e7e9ec;
+  --muted: #a7adb6;
+  --subtle: #8c929c;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #ffffff;
+  --accent-text: #8ab4ff;
+  --accent-soft: rgb(59 130 246 / 0.14);
+  --accent-line: rgb(96 165 250 / 0.42);
+  --focus: #8ab4ff;
+
+  --ok: #4ade80;
+  --ok-soft: rgb(34 197 94 / 0.12);
+  --ok-line: rgb(74 222 128 / 0.38);
+  --warn: #fbbf24;
+  --warn-soft: rgb(245 158 11 / 0.12);
+  --warn-line: rgb(251 191 36 / 0.4);
+  --bad: #f87171;
+  --bad-soft: rgb(239 68 68 / 0.13);
+  --bad-line: rgb(248 113 113 / 0.42);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --canvas: #f4f5f7;
+    --surface: #ffffff;
+    --raised: #eef0f3;
+    --inset: #f7f8fa;
+    --line: #dde1e6;
+    --line-strong: #c3cad3;
+    --control: #7c8594;
+    --control-strong: #5b6472;
+    --fg: #0f1720;
+    --muted: #474f5c;
+    --subtle: #5b6472;
+
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-fg: #ffffff;
+    --accent-text: #1d4ed8;
+    --accent-soft: rgb(37 99 235 / 0.08);
+    --accent-line: rgb(37 99 235 / 0.35);
+    --focus: #1d4ed8;
+
+    --ok: #166534;
+    --ok-soft: rgb(22 163 74 / 0.1);
+    --ok-line: rgb(22 163 74 / 0.38);
+    --warn: #92400e;
+    --warn-soft: rgb(217 119 6 / 0.11);
+    --warn-line: rgb(217 119 6 / 0.42);
+    --bad: #b91c1c;
+    --bad-soft: rgb(220 38 38 / 0.08);
+    --bad-line: rgb(220 38 38 / 0.38);
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-inset: var(--inset);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-control: var(--control);
+  --color-control-strong: var(--control-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-focus: var(--focus);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-bad-line: var(--bad-line);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  /* Visible keyboard focus everywhere; mouse clicks do not show the ring. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Native <details> markers are replaced by our own chevrons. */
+  summary {
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: 0.75rem;
+    top: -3rem;
+    z-index: 50;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+  .skip-link:focus {
+    top: 0.75rem;
+  }
+
+  /* Numbers that line up in tables and stats. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

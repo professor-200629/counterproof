@@ -66,7 +66,7 @@ def test_invalid_tool_calls_become_model_output_failures(client, monkeypatch):
 
 
 def test_network_errors_are_unavailable(client, monkeypatch):
-    script(monkeypatch, [httpx.ConnectError("down")] * 3)
+    script(monkeypatch, [httpx.ConnectError("down")] * (providers.MAX_RETRIES + 1))
     with pytest.raises(providers.ProviderError) as e:
         client.chat([{"role": "user", "content": "x"}])
     assert e.value.kind == "unavailable"

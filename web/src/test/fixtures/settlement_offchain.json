@@ -1,0 +1,19 @@
+{
+ "challenge": {
+  "id": 1,
+  "spec_digest": "sha256:c70c529d7b1eefdd6b73f308051daaf650a2072edb373836d4554e5bd2466aa8",
+  "status": "offchain",
+  "network": "offchain",
+  "chain_id": null,
+  "contract": null,
+  "onchain_id": null,
+  "fund_tx": null,
+  "reward_wei": "0",
+  "note": null,
+  "created_at": 1791288234,
+  "updated_at": 1791288234
+ },
+ "attestation": null,
+ "onchain": null,
+ "explorer_template": null
+}

@@ -353,7 +353,7 @@ def evaluation_inputs(conn: sqlite3.Connection, eid: str) -> tuple[dict, str, di
 
 
 def record_evaluation(conn: sqlite3.Connection, eid: str, bundle: dict) -> dict:
-    d = store().put(bundle)
+    d = put_evidence(bundle)
     outcome = bundle["verdict"]["outcome"]
     summary = {"outcome": outcome, "reason": bundle["verdict"]["reason"], "summary": bundle["verdict"]["summary"],
                "rule": bundle["verdict"]["rule"], "reward_eligible": bundle["verdict"]["reward_eligible"],
@@ -375,12 +375,29 @@ def record_evaluation(conn: sqlite3.Connection, eid: str, bundle: dict) -> dict:
     return get_evaluation(conn, eid)
 
 
+def put_evidence(bundle: dict) -> str:
+    """Store the sealed body under its seal digest, so the evaluation's evidence digest, the
+    digest inside the bundle and the digest the evaluator attests are one and the same."""
+    body = {k: v for k, v in bundle.items() if k != "evidence_digest"}
+    d = store().put(body)
+    if d != bundle.get("evidence_digest"):
+        raise ServiceError("evidence bundle seal does not match its contents", 500)
+    return d
+
+
+def load_evidence(d: str) -> dict:
+    body = store().get(d)
+    if "evidence_digest" in body:  # stored by an earlier version with the field inside
+        return body
+    return {**body, "evidence_digest": d}
+
+
 def evidence(conn: sqlite3.Connection, d: str) -> dict:
     ok = conn.execute("SELECT 1 FROM evaluations WHERE evidence_digest=? UNION SELECT 1 FROM regressions WHERE evidence_digest=?",
                       (d, d)).fetchone()
     if not ok:
         raise ServiceError("unknown evidence bundle", 404)
-    return store().get(d)
+    return load_evidence(d)
 
 
 # ---------------------------------------------------------------------- regression (patch -> retest -> export)
@@ -431,7 +448,7 @@ def get_regression(conn: sqlite3.Connection, rid: str) -> dict:
 
 
 def record_regression(conn: sqlite3.Connection, rid: str, bundle: dict) -> dict:
-    d = store().put(bundle)
+    d = put_evidence(bundle)
     with tx(conn):
         conn.execute("UPDATE regressions SET status=?, outcome=?, evidence_digest=?, finished_at=? WHERE id=?",
                      (bundle["verdict"]["outcome"], bundle["verdict"]["outcome"], d, now(), rid))

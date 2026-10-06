@@ -189,6 +189,9 @@ def main() -> int:
             att = sett["attestation"]
             step("attest", signer=att["signer"], expiry=att["expiry"], signature=att["signature"][:20] + "...")
             m = att["typed_data"]["message"]
+            assert m["evidenceDigest"] == "0x" + ev["evidence_digest"][7:], (m["evidenceDigest"], ev["evidence_digest"])
+            bundle = s.get(f"/api/evidence/{ev['evidence_digest']}")
+            assert bundle["evidence_digest"] == ev["evidence_digest"]
             tup = (int(m["challengeId"]), bytes.fromhex(m["specDigest"][2:]), bytes.fromhex(m["submissionId"][2:]),
                    bytes.fromhex(m["candidateDigest"][2:]), bytes.fromhex(m["evidenceDigest"][2:]),
                    w3.to_checksum_address(m["challenger"]), w3.to_checksum_address(m["recipient"]), int(m["verdict"]), int(m["expiry"]))

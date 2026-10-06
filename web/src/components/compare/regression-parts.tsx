@@ -1,0 +1,207 @@
+"use client";
+
+import { Download, FileCode2, FileJson, GitCompareArrows } from "lucide-react";
+import { JobFacts } from "@/components/job-facts";
+import { Badge } from "@/components/ui/badge";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Digest } from "@/components/ui/digest";
+import { EmptyState, ErrorState, Loading } from "@/components/ui/states";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { TimeAgo } from "@/components/ui/time";
+import { regressionExportUrl, type Regression } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import { POLL_MS, useRegressionExport } from "@/lib/queries";
+import { isRegressionActive } from "@/lib/status";
+
+// ---------------------------------------------------------------------------- in progress
+/** A queued / replaying regression: only what the backend reports, no estimated progress. */
+export function RegressionProgress({ regression }: { regression: Regression }) {
+  const job = regression.job ?? null;
+  return (
+    <div className="space-y-3" role="status" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge status={regression.status} domain="regression" />
+        <span className="font-mono text-xs text-muted">{regression.target_key}</span>
+      </div>
+      <p className="text-sm text-muted">
+        {regression.status === "queued"
+          ? "Waiting for a worker. Nothing has been replayed yet."
+          : "The evaluator is replaying the sequence in a fresh synthetic marketplace. No verdict yet."}{" "}
+        This page checks again every {POLL_MS / 1000} s until the backend reports an outcome.
+      </p>
+      <JobFacts job={job} requestedAt={regression.created_at} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------- exports
+/** JSON fixture and pytest file for a finished regression, plus what the test asserts. */
+export function ExportPanel({ regression }: { regression: Regression }) {
+  const finished = !!regression.outcome && !isRegressionActive(regression.status);
+  const exp = useRegressionExport(regression.id, { enabled: finished });
+  return (
+    <Card>
+      <CardHeader
+        title="Export as a regression test"
+        description="The same counterexample as a file you can keep: a JSON fixture, or a pytest file that replays it with the CounterProof backend."
+        actions={
+          finished ? (
+            <>
+              <ButtonLink href={regressionExportUrl(regression.id, "json")} external download size="sm" icon={<FileJson />}>
+                JSON
+              </ButtonLink>
+              <ButtonLink href={regressionExportUrl(regression.id, "pytest")} external download size="sm" icon={<FileCode2 />}>
+                pytest
+              </ButtonLink>
+            </>
+          ) : undefined
+        }
+      />
+      <CardBody className="space-y-3">
+        {!finished ? (
+          <p className="text-sm text-muted">Available once the regression replay has an outcome.</p>
+        ) : exp.isPending ? (
+          <Loading label="regression export" rows={3} />
+        ) : exp.isError ? (
+          <ErrorState error={exp.error} title="Could not load the export" onRetry={() => void exp.refetch()} compact />
+        ) : exp.data ? (
+          <>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[minmax(8rem,auto)_1fr]">
+              <dt className="text-muted">Test name</dt>
+              <dd className="font-mono text-xs break-all">{exp.data.name}</dd>
+              <dt className="text-muted">Asserts</dt>
+              <dd>{exp.data.expectation}</dd>
+              <dt className="text-muted">Rule</dt>
+              <dd>
+                <span className="font-mono text-xs text-muted">{exp.data.rule.id}</span> {exp.data.rule.statement}
+              </dd>
+              <dt className="text-muted">Initial state</dt>
+              <dd>
+                <Digest value={exp.data.initial_state_digest} label="initial state digest" />{" "}
+                <span className="text-xs text-muted">({exp.data.initial_state.world_id}, synthetic)</span>
+              </dd>
+              <dt className="text-muted">Actions</dt>
+              <dd className="tabular">{exp.data.actions.length}</dd>
+              <dt className="text-muted">Last result</dt>
+              <dd className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={exp.data.last_result.outcome} domain="regression" size="sm" />
+                <span className="font-mono text-xs text-muted">{exp.data.last_result.target}</span>
+              </dd>
+            </dl>
+            {exp.data.last_result.outcome === "verified_violation" ? (
+              <p className="text-sm font-medium text-bad">
+                This test fails today against {exp.data.last_result.target}: the sequence still violates {exp.data.rule.id} there.
+              </p>
+            ) : exp.data.last_result.outcome !== "not_reproduced" ? (
+              <p className="text-sm text-warn">
+                The last replay had no clear verdict ({exp.data.last_result.outcome ?? "none"}), so the test&apos;s current status is unknown.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </CardBody>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------- history
+export interface RegressionListProps {
+  query: { data?: Regression[]; isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
+  selectedId: string | null;
+  onSelect: (r: Regression) => void;
+}
+
+/** Every regression replay recorded for this challenge, newest first. */
+export function RegressionList({ query, selectedId, onSelect }: RegressionListProps) {
+  if (query.isPending) return <Loading label="previous regressions" rows={3} card />;
+  if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} compact />;
+  const regs = query.data ?? [];
+  if (regs.length === 0) {
+    return (
+      <EmptyState
+        compact
+        title="No regression replays yet"
+        description="Start one above: the evaluator replays a verified sequence against the version you choose."
+      />
+    );
+  }
+  return (
+    <Table caption="Regression replays for this challenge, newest first">
+      <THead>
+        <tr>
+          <TH>Regression</TH>
+          <TH>Replayed against</TH>
+          <TH>Outcome</TH>
+          <TH>Source candidate</TH>
+          <TH>Queued</TH>
+          <TH>
+            <span className="sr-only">Actions</span>
+          </TH>
+        </tr>
+      </THead>
+      <TBody>
+        {regs.map((r) => {
+          const selected = r.id === selectedId;
+          const finished = !!r.outcome && !isRegressionActive(r.status);
+          return (
+            <TR key={r.id} className={cn(selected && "bg-raised/70")} aria-current={selected ? "true" : undefined}>
+              <TD mono>
+                {r.id}
+                {selected ? (
+                  <Badge tone="neutral" size="sm" className="ml-2">
+                    shown above
+                  </Badge>
+                ) : null}
+              </TD>
+              <TD mono>{r.target_key}</TD>
+              <TD>
+                <StatusBadge status={r.status} domain="regression" size="sm" />
+              </TD>
+              <TD mono className="text-muted">
+                {r.source_candidate_id}
+              </TD>
+              <TD className="whitespace-nowrap text-xs text-muted">
+                <TimeAgo ts={r.created_at} />
+              </TD>
+              <TD>
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <Button size="sm" variant={selected ? "ghost" : "secondary"} icon={<GitCompareArrows />} onClick={() => onSelect(r)} disabled={selected}>
+                    {selected ? "Comparing" : "Compare"}
+                  </Button>
+                  {finished ? (
+                    <>
+                      <ButtonLink
+                        href={regressionExportUrl(r.id, "json")}
+                        external
+                        download
+                        variant="ghost"
+                        size="sm"
+                        icon={<Download />}
+                        aria-label={`Download regression ${r.id} as JSON`}
+                      >
+                        JSON
+                      </ButtonLink>
+                      <ButtonLink
+                        href={regressionExportUrl(r.id, "pytest")}
+                        external
+                        download
+                        variant="ghost"
+                        size="sm"
+                        icon={<Download />}
+                        aria-label={`Download regression ${r.id} as a pytest file`}
+                      >
+                        pytest
+                      </ButtonLink>
+                    </>
+                  ) : null}
+                </div>
+              </TD>
+            </TR>
+          );
+        })}
+      </TBody>
+    </Table>
+  );
+}

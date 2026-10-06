@@ -79,6 +79,11 @@ def test_create_challenge_search_replay_regress_export(client):
     bundle = client.get(f"/api/evidence/{ev['evidence_digest']}?download=true")
     assert bundle.status_code == 200 and "attachment" in bundle.headers["content-disposition"]
     assert bundle.json()["verdict"]["rule"]["rule_id"] == "R1"
+    from counterproof.evaluator import verify_seal
+
+    # one evidence digest everywhere: evaluation record == digest inside the bundle == recomputed seal
+    assert bundle.json()["evidence_digest"] == ev["evidence_digest"]
+    assert verify_seal(bundle.json())
     assert client.get(f"/api/candidates/{budget_cand['id']}").json()["status"] == "verified_violation"
 
     reg = client.post("/api/regressions", json={"candidate_id": budget_cand["id"], "target": "ref-purchasing-agent@1.1.0"}).json()

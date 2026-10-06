@@ -126,7 +126,8 @@ def create_app() -> FastAPI:
         store = ArtifactStore()
         try:
             spec = store.get(req.spec_digest)
-            bundle = store.get(req.evidence_digest)
+            body = store.get(req.evidence_digest)
+            bundle = body if "evidence_digest" in body else {**body, "evidence_digest": req.evidence_digest}
         except (ValueError, FileNotFoundError) as e:
             raise HTTPException(400, f"artifact unavailable or corrupted: {e}") from e
         problems = recheck_bundle(bundle, spec)

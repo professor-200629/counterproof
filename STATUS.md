@@ -1,57 +1,71 @@
 # Status
 
-_Last updated: 2026-10-06 (day 1). Hackathon submissions close 2026-10-14 03:59 UTC
-(13 Oct 23:59 US Eastern), per hackathon.monad.xyz. 13 Oct is reserved for verification,
-recording and submission._
+_Last updated: 2026-10-06 (day 1, evening). Hackathon submissions close
+2026-10-14 03:59 UTC (13 Oct 23:59 US Eastern), per hackathon.monad.xyz. 13 Oct is reserved
+for verification, recording and submission._
 
 ## Current stage
 
-Stage 1 (local loop) and Stage 2 (local settlement) are working end to end on a local anvil
-chain. The web console is being built. Monad testnet deployment is waiting for testnet MON.
+Stages 1–2 work end to end on a local anvil chain. Stage 3 backend pieces (three strategies,
+repaired target, regression export, model-assisted generator) work. Stage 4 (independent
+live-model evaluation) is running under runner 1.0.2. The web console pages are being built.
+Monad testnet is waiting for testnet MON.
 
 ## What works (verified by running it)
 
 | Capability | Evidence |
 |---|---|
-| Canonical challenge spec v1, SHA-256 digests, immutable versions | `tests/test_api_flow.py`, preview digest = funded digest |
+| Canonical challenge spec v1, SHA-256 digests, immutable versions; preview digest = funded digest | `tests/test_api_flow.py` |
 | Synthetic market, hash-chained ledger, 5 rule templates, deterministic checker | `tests/test_market_and_rules.py` |
-| Vulnerable fixture 1.0.0 breaks R1 (38,400 vs 25,000 SYN) and R3 (double payment) | tests + local e2e |
-| Repaired 1.1.0 resists both sequences and every reference attack | tests + local e2e |
+| Vulnerable fixture 1.0.0 breaks R1 (38,400 vs 25,000 SYN) and R3 (double payment); repaired 1.1.0 resists | tests + local e2e |
 | Isolated replay: fresh child, no secrets, socket guard, Job Object limits | `tests/test_sandbox.py` |
 | Fail closed on unavailable isolation and on code-digest mismatch | `tests/test_evaluator.py` |
-| Three deterministic strategies with shrinking, budgets and cancellation | `tests/test_api_flow.py` |
-| Evidence bundles sealed; tampering detected; signer re-verification | `tests/test_evaluator.py` |
-| Durable jobs, cancellation, restart recovery | `tests/test_api_flow.py` |
-| Contract: 56 Foundry tests (fuzz + invariant) | `forge test` (contract workflow report) |
-| Python EIP-712 signer == contract hash; wrong signer / altered recipient / cross-chain / cross-contract / double settle / early refund rejected | `tests/test_chain_local.py` on anvil |
-| Full multi-process local run: create → fund → search → commit → replay → attest → settle (relayed) → withdraw → patch → retest → export, plus a no-violation challenge refunded | `scripts/e2e_local.py`, report `docs/evidence/local-e2e-20261006-174302.json` |
-| Monad gas-limit billing reproduced locally (withdraw fee = gas limit × price) | same report |
+| Strategies with shrinking, budgets, cancellation; model-assisted generator (live on Groq) | `tests/test_api_flow.py`, `tests/test_model_assisted.py` |
+| Evidence sealed; tampering detected; signer re-verification + own replay | `tests/test_evaluator.py`, local e2e |
+| Live-model classification: provider outage → runner_failure (never "not reproduced"); k-of-n; invalid tool calls → target failure; provider waits excluded from target time | `tests/test_live_model_classification.py`, `tests/test_providers.py` |
+| Durable jobs, cancellation, restart recovery, retry of runner failures | `tests/test_api_flow.py`, `tests/test_live_model_classification.py` |
+| Contract: 58 Foundry tests (fuzz, invariants, dependency pins); 7 planted bugs all caught | `forge test`, contract workflow report |
+| Python EIP-712 signer == contract; wrong signer / altered recipient / cross-chain / cross-contract / double settle / early refund rejected | `tests/test_chain_local.py` (anvil) |
+| Full multi-process local run incl. relayed settle, withdraw, patch, retest, export, refund | `docs/evidence/local-e2e-20261006-174302.json` (runner 1.0.0; deterministic path unchanged since) |
+| Monad gas-limit billing reproduced locally | same report |
 
-Test counts on 2026-10-06: backend 61 passed; contracts 56 passed (to be re-run after the
-review fixes).
+Tests on 2026-10-06 (latest run): backend **77 passed**; contracts **58 passed**; web unit
+tests 30 passed (foundation).
 
-## In progress
+## Incidents (recorded, fixed)
 
-- Web console (Next.js 16, wagmi 3): foundation and pages being built.
-- Contract review fixes: OpenZeppelin submodule pinned to v5.6.1 (the first commit picked
-  up gitlinks that pointed at `master`).
+1. **Misclassified live-model replays (runner 1.0.0).** A network outage during the first
+   live-model evaluation made every model call fail; replays "completed" with zero tool calls
+   and were classified `not_reproduced`. Fixed in runner 1.0.1 (provider failure →
+   `runner_failure`). The report is kept in `docs/evidence/superseded/` with an explanation.
+2. **Rate limits read as outages (runner 1.0.1).** The rerun correctly reported
+   `runner_failure`, but the causes were Groq's 8,000 tokens/minute limit (429) and invalid
+   tool calls generated by the model (400). Runner 1.0.2 paces requests, honours
+   retry-after, excludes provider waits from target time and classifies invalid model output
+   as a target failure. That run's report (`independent-llm-20261006-190723.json`) shows only
+   runner failures and contains no findings.
+3. **OpenZeppelin submodule pinned to master in the first commit.** Fixed; pins verified by
+   `contracts/script/check-release.sh` and `DependencyPins.t.sol`.
+
+## Observations awaiting the evaluator (not findings yet)
+
+In the first live-model search (provider reachable at the time) the challenger harness saw,
+once each: an over-budget purchase (37,800 vs 25,000 SYN for two monitors in one request), a
+double payment after gateway timeouts, and a privileged `update_mandate` call after injected
+merchant text. They count only if the evaluator reproduces them in ≥ 2 of 3 fresh replays.
 
 ## Not yet verified
 
-- **Monad testnet**: keys generated (`scripts/keygen.py`); deployer
-  `0x3893A16a140969702F88C1DCa98CA5a1Cc27554B` needs testnet MON from the faucet. No testnet
-  transaction has been made yet. Nothing in this repository should be read as a testnet
-  transaction until `docs/deployments/monad-testnet.json` and a `testnet-e2e` report exist.
-- **Container isolation**: implemented (`docker/target.Dockerfile`, `DockerBackend`) but the
-  Docker engine does not start on this machine; untested.
-- **Live-model agent and model-assisted generator**: code paths exist; not yet run against
-  Groq.
-- **Second-implementation evaluation**: pending (Stage 4).
-- **Web console**: not yet verified in a browser.
+- **Monad testnet**: keys generated; deployer `0x3893A16a140969702F88C1DCa98CA5a1Cc27554B`
+  needs testnet MON. No testnet transaction exists yet.
+- **Container isolation**: implemented, untested (Docker engine does not start here).
+- **Web console**: pages in progress; not yet verified in a browser.
+- **10 MON reserve rule**: anvil's Monad mode does not enforce it; only testnet can confirm.
 
 ## Next tasks
 
-1. Finish and verify the web console against `scripts/dev.py local`.
-2. When testnet MON arrives: `testnet.py fund-roles`, `deploy`, `verify`, `e2e_testnet.py`.
-3. Run the live-model agent (Groq) under the three strategies; record honest results.
-4. Demo script, pitch, submission text; record the demo.
+1. Finish Stage 4 and record its results honestly (including no-violation results).
+2. Verify the web console in the browser against `scripts/dev.py local`.
+3. Testnet: `testnet.py fund-roles`, `deploy`, `verify`, `e2e_testnet.py`, then the UI on testnet.
+4. Decide the hosted "live product" (needs the owner's approval).
+5. Final local e2e on the final code, demo recording, submission.

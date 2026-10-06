@@ -6,7 +6,8 @@
                                    labelled "Local dev account" wallet. NOT Monad.
   python scripts/dev.py testnet    Monad Testnet (10143) with keys and contract from .env.
   python scripts/dev.py offchain   no chain: evidence only, no rewards.
-  add --no-web to skip the Next.js dev server.
+  add --no-web to skip the Next.js dev server; --workers N (default 2) runs N job workers
+  so a slow live-model run does not block other jobs (claiming a job is atomic).
 
 Ports: web 3000, API 8010, signer 8011, anvil 8545. Ctrl+C stops everything.
 Each process receives only the secrets its role needs.
@@ -117,7 +118,9 @@ def main() -> int:
     common |= {"COUNTERPROOF_SIGNER_TOKEN": token, "COUNTERPROOF_SIGNER_URL": "http://127.0.0.1:8011"}
     roles["worker"] |= providers
     roles["api"] |= providers
-    for name, module in (("signer", "counterproof.signer"), ("api", "counterproof.api"), ("worker", "counterproof.worker")):
+    workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 2
+    services = [("signer", "counterproof.signer"), ("api", "counterproof.api")] + [("worker", "counterproof.worker")] * workers
+    for name, module in services:
         env = base | common | roles[name] | {"COUNTERPROOF_ROLE": name}
         procs.append((name, subprocess.Popen([PY, "-m", module], cwd=str(ROOT / "backend"), env=env)))
     wait_port(8010)
