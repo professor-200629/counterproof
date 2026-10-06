@@ -44,8 +44,10 @@ class ProviderError(Exception):
 
 
 def provider_status() -> list[dict]:
-    """Which providers are configured - presence only, never the key."""
+    """Which provider keys are present - presence only, never the key. Presence does not
+    mean the account has quota; a live run reports the provider's real answer."""
     return [{"provider": p, "key_env": c["key_env"], "configured": bool(os.environ.get(c["key_env"])),
+             "key_present": bool(os.environ.get(c["key_env"])), "availability": "not checked",
              "default_model": c["default_model"]} for p, c in PROVIDERS.items()]
 
 
