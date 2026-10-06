@@ -55,30 +55,47 @@ class ProviderError(Exception):
         self.kind = kind
 
 
-class _Pacer:
-    """Process-wide sliding-window token pacing per provider/model."""
+class SharedPacer:
+    """Sliding 60-second token window per provider/model, shared by every worker process
+    through a small SQLite file (the provider's limit is per account, not per process)."""
 
-    def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.windows: dict[str, list[tuple[float, int]]] = {}
+    def __init__(self, path=None) -> None:
+        self.path = path
 
-    def wait(self, key: str, tpm: int, tokens: int) -> float:
+    def _db(self):
+        import sqlite3
+
+        from .config import settings
+
+        p = self.path or (settings().data_dir / "ratelimit.sqlite")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(p, timeout=30, isolation_level=None)
+        conn.execute("CREATE TABLE IF NOT EXISTS usage (key TEXT, t REAL, tokens INTEGER)")
+        return conn
+
+    def wait(self, key: str, tpm: int, tokens: int, sleep=time.sleep) -> float:
         waited = 0.0
-        while True:
-            with self.lock:
-                now = time.monotonic()
-                w = [(t, n) for t, n in self.windows.get(key, []) if now - t < 60]
-                used = sum(n for _, n in w)
-                if used + tokens <= tpm or not w:
-                    w.append((now, tokens))
-                    self.windows[key] = w
+        conn = self._db()
+        try:
+            while True:
+                now = time.time()
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM usage WHERE t < ?", (now - 60,))
+                rows = conn.execute("SELECT t, tokens FROM usage WHERE key=? ORDER BY t", (key,)).fetchall()
+                used = sum(n for _, n in rows)
+                if used + tokens <= tpm or not rows:
+                    conn.execute("INSERT INTO usage VALUES (?,?,?)", (key, now, tokens))
+                    conn.execute("COMMIT")
                     return waited
-                pause = 60 - (now - w[0][0]) + 0.25
-            time.sleep(pause)
-            waited += pause
+                conn.execute("COMMIT")
+                pause = max(0.25, 60 - (now - rows[0][0]) + 0.25)
+                sleep(pause)
+                waited += pause
+        finally:
+            conn.close()
 
 
-PACER = _Pacer()
+PACER = SharedPacer()
 
 
 def _retry_after(r) -> float:
@@ -115,6 +132,14 @@ class ChatClient:
     errors: list[str] = field(default_factory=list)
     paced_seconds: float = 0.0
     rate_limited_seconds: float = 0.0
+    cancel: threading.Event | None = None  # set by the worker; waits end early when it fires
+
+    def _sleep(self, seconds: float) -> None:
+        if self.cancel is not None:
+            if self.cancel.wait(seconds):
+                raise ProviderError("cancelled while waiting for the provider", kind="cancelled")
+        else:
+            time.sleep(seconds)
 
     def __post_init__(self) -> None:
         if self.provider not in PROVIDERS:
@@ -144,8 +169,10 @@ class ChatClient:
         attempt, failures, rate_waits, gen_retries = 0, 0, 0, 0
         while True:
             attempt += 1
+            if self.cancel is not None and self.cancel.is_set():
+                raise ProviderError("cancelled", kind="cancelled")
             if tpm:
-                self.paced_seconds += PACER.wait(f"{self.provider}/{self.model}", tpm, estimate)
+                self.paced_seconds += PACER.wait(f"{self.provider}/{self.model}", tpm, estimate, sleep=self._sleep)
             try:
                 r = httpx.post(url, json=body, timeout=TIMEOUT_S,
                                headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"})
@@ -154,7 +181,7 @@ class ChatClient:
                 failures += 1
                 if failures > MAX_RETRIES:
                     break
-                time.sleep(min(2.0 ** failures, 30.0))
+                self._sleep(min(2.0 ** failures, 30.0))
                 continue
             else:
                 if r.status_code == 200:
@@ -178,7 +205,7 @@ class ChatClient:
                         break
                     pause = min(_retry_after(r) + 0.5, MAX_RATE_LIMIT_SLEEP)
                     self.rate_limited_seconds += pause
-                    time.sleep(pause)
+                    self._sleep(pause)
                     continue
                 if r.status_code == 400 and any(s in r.text for s in ("tool_use_failed", "Tool call validation failed",
                                                                       "Parsing failed", "failed_generation")):
@@ -191,7 +218,7 @@ class ChatClient:
                     failures += 1
                     if failures > MAX_RETRIES:
                         break
-                    time.sleep(2.0 * failures)
+                    self._sleep(2.0 * failures)
                     continue
                 break
         self.errors.append(last)
@@ -224,7 +251,8 @@ class ModelBroker:
             return self.client.chat(msgs, tools=request.get("tools"), temperature=self.temperature,
                                     max_tokens=int(request.get("max_tokens") or 600))
         except ProviderError as e:
-            raise BrokerRefused(str(e), kind="model_output" if e.kind == "model_output" else "provider") from e
+            kind = {"model_output": "model_output", "cancelled": "cancelled"}.get(e.kind, "provider")
+            raise BrokerRefused(str(e), kind=kind) from e
 
 
 def broker_for_spec(spec: dict, budget) -> ModelBroker | None:

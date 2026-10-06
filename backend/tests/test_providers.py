@@ -79,21 +79,33 @@ def test_auth_errors_are_not_retried(client, monkeypatch):
     assert "gsk_" not in str(e.value)  # redacted
 
 
-def test_pacer_spaces_requests_within_the_token_limit(monkeypatch):
-    p = providers._Pacer()
-    slept = []
+def test_shared_pacer_spaces_requests_across_processes(tmp_path, monkeypatch):
     clock = [1000.0]
-    monkeypatch.setattr(providers.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(providers.time, "time", lambda: clock[0])
+    slept = []
 
     def fake_sleep(s):
         slept.append(s)
         clock[0] += s
 
-    monkeypatch.setattr(providers.time, "sleep", fake_sleep)
-    assert p.wait("k", 8000, 5000) == 0
-    assert p.wait("k", 8000, 2000) == 0
-    waited = p.wait("k", 8000, 3000)  # would exceed 8000 within the minute
+    a = providers.SharedPacer(tmp_path / "rl.sqlite")
+    b = providers.SharedPacer(tmp_path / "rl.sqlite")  # a second worker process sees the same window
+    assert a.wait("k", 8000, 5000, sleep=fake_sleep) == 0
+    assert b.wait("k", 8000, 2000, sleep=fake_sleep) == 0
+    waited = b.wait("k", 8000, 3000, sleep=fake_sleep)  # 10,000 > 8,000 within the minute
     assert waited > 59 and slept
+    assert a.wait("other-model", 8000, 7000, sleep=fake_sleep) == 0  # separate budget per model
+
+
+def test_cancel_interrupts_a_rate_limit_wait(client, monkeypatch):
+    import threading
+
+    script(monkeypatch, [Resp(429, headers={"retry-after": "60"})] * 3)
+    client.cancel = threading.Event()
+    client.cancel.set()
+    with pytest.raises(providers.ProviderError) as e:
+        client.chat([{"role": "user", "content": "x"}])
+    assert e.value.kind == "cancelled"
 
 
 LLM = "llm-purchasing-agent@0.1.1"

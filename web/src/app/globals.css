@@ -149,6 +149,13 @@
   pre {
     font-family: var(--font-mono);
   }
+
+  /* Hashes, addresses and ids have no spaces; let them wrap instead of widening the page
+     on small screens. Truncated digests (white-space: nowrap) are unaffected. */
+  .font-mono,
+  code {
+    overflow-wrap: anywhere;
+  }
 }
 
 @layer components {

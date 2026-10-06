@@ -139,6 +139,8 @@ class Worker:
         challenger, recipient = challenger_identity()
         budget = Budget(**{k: v for k, v in run["budget"].items() if k in Budget.__dataclass_fields__})
         broker = broker_for_spec(spec, budget)
+        if broker is not None:
+            broker.client.cancel = cancel
         last = [0.0]
 
         def progress(record: dict) -> None:
@@ -150,6 +152,7 @@ class Worker:
             from .strategies.model_assisted import ModelAssisted
 
             gen = ModelAssisted(spec, run["params"], budget)
+            gen.client.cancel = cancel
             proposals, model_label = gen.proposals(), gen.label
         else:
             proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, run["params"]), None
@@ -196,8 +199,11 @@ class Worker:
             conn.execute("UPDATE candidates SET status='replaying' WHERE id=?", (e["candidate_id"],))
         from .providers import broker_for_spec
 
+        broker = broker_for_spec(spec, None)
+        if broker is not None:
+            broker.client.cancel = cancel
         bundle = evaluate(spec=spec, spec_dgst=d, candidate=candidate, submission=submission,
-                          broker=broker_for_spec(spec, None), cancel=cancel)
+                          broker=broker, cancel=cancel)
         e = services.record_evaluation(conn, eid, bundle)
         if bundle["verdict"]["outcome"] == "verified_violation" and bundle["verdict"]["reward_eligible"]:
             from .chain import request_attestation_safely
@@ -212,10 +218,13 @@ class Worker:
         conn.execute("UPDATE regressions SET status='replaying' WHERE id=?", (rid,))
         from .providers import broker_for_spec
 
+        broker = broker_for_spec(spec, None)
+        if broker is not None:
+            broker.client.cancel = cancel
         bundle = evaluate(spec=spec, spec_dgst=r["spec_digest"], candidate=candidate,
                           submission={"submission_id": f"regression:{rid}", "challenger": candidate["challenger"],
                                       "recipient": candidate["recipient"]},
-                          broker=broker_for_spec(spec, None), cancel=cancel)
+                          broker=broker, cancel=cancel)
         services.record_regression(conn, rid, bundle)
         return {"outcome": bundle["verdict"]["outcome"]}
 

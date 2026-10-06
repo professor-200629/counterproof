@@ -192,6 +192,8 @@ def run_sequence(
                     try:
                         out = broker(msg.get("request") or {})
                     except BrokerRefused as e:
+                        if e.kind == "cancelled":
+                            return result("cancelled", "cancellation requested", keep=False)
                         if e.kind == "model_output":
                             child.send({"kind": "abort", "reason": "invalid model output"})
                             return result("target_crash", "the model produced output the provider rejected as an invalid "
