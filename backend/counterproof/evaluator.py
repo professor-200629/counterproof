@@ -194,7 +194,8 @@ def evaluate(
         if res.outcome == "cancelled":
             return finish("cancelled", "cancelled during replay", claimed_rule=claimed, replays=replays, isolation=required)
         if res.outcome == "runner_failure":
-            return finish("runner_failure", res.reason, claimed_rule=claimed, replays=replays, isolation=required)
+            return finish("runner_failure", f"{res.reason} - this replay did not test the agent; the evaluation is "
+                          "incomplete and can be retried", claimed_rule=claimed, replays=replays, isolation=required)
         if not chain_ok:
             return finish("runner_failure", f"ledger integrity check failed: {chain_info}", claimed_rule=claimed,
                           replays=replays, isolation=required)

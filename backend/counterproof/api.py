@@ -329,6 +329,11 @@ def get_evaluation(eid: str) -> dict:
     return services.get_evaluation(db(), eid)
 
 
+@app.post("/api/evaluations/{eid}/retry")
+def retry_evaluation(eid: str) -> dict:
+    return services.retry_evaluation(db(), eid)
+
+
 @app.post("/api/evaluations/{eid}/attest")
 def attest(eid: str) -> dict:
     from . import chain

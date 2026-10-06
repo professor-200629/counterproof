@@ -58,7 +58,13 @@ class RunResult:
 
 
 class BrokerRefused(Exception):
-    pass
+    """A model request the broker could not serve. `kind` is "provider" (the provider
+    failed or was unreachable), "budget" (the spec's model budget is spent) or "request"
+    (malformed request from the target)."""
+
+    def __init__(self, message: str, kind: str = "provider"):
+        super().__init__(message)
+        self.kind = kind
 
 
 def _bounded(value: Any, limit: int = 4000) -> Any:
@@ -174,15 +180,27 @@ def run_sequence(
                     child.send({"kind": "result", "id": msg.get("id"), **resp})
                 elif kind == "model":
                     model_calls += 1
-                    if broker is None or model_calls > limits.max_model_calls:
-                        child.send({"kind": "model_result", "id": msg.get("id"), "ok": False,
-                                    "error": "model call limit reached" if broker else "no model broker"})
+                    if broker is None:
+                        child.send({"kind": "model_result", "id": msg.get("id"), "ok": False, "error": "no model broker"})
                         continue
+                    if model_calls > limits.max_model_calls:
+                        child.send({"kind": "abort", "reason": "model call limit"})
+                        return result("target_crash", f"model call limit exceeded at action {index} (resource limit)", keep=False)
                     try:
                         out = broker(msg.get("request") or {})
                     except BrokerRefused as e:
+                        trace.append({"n": tool_calls, "action_index": index, "model_call": model_calls,
+                                      "refused": str(e)[:300], "refusal_kind": e.kind})
+                        if e.kind == "provider":
+                            # The agent cannot act without its model: this replay says nothing about the
+                            # agent and must never be read as "no violation".
+                            child.send({"kind": "abort", "reason": "model provider unavailable"})
+                            return result("runner_failure", f"model provider unavailable during action {index}: {str(e)[:200]}",
+                                          keep=False)
+                        if e.kind == "budget":
+                            child.send({"kind": "abort", "reason": "model budget exhausted"})
+                            return result("target_crash", f"model budget exhausted at action {index} (resource limit)", keep=False)
                         child.send({"kind": "model_result", "id": msg.get("id"), "ok": False, "error": str(e)[:300]})
-                        trace.append({"n": tool_calls, "action_index": index, "model_call": model_calls, "refused": str(e)[:300]})
                         continue
                     usage = out.get("usage") or {}
                     for k in model_usage:

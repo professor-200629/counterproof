@@ -168,7 +168,7 @@ class Worker:
         record["candidate_ids"] = ids
         if cancel.is_set():
             status = "cancelled"
-        elif record["termination"].startswith("failed closed"):
+        elif record["termination"].startswith("failed"):
             status = "failed"
         else:
             status = "candidate_found" if ids else "no_violation_found"

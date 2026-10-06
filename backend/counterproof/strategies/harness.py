@@ -54,6 +54,10 @@ class SearchRecord:
         return d
 
 
+class RunnerFailure(Exception):
+    pass
+
+
 class Harness:
     def __init__(self, *, spec: dict, spec_dgst: str, strategy: str, params: dict, budget: Budget,
                  challenger: str, recipient: str, run_id: str, cancel: threading.Event | None = None,
@@ -103,6 +107,12 @@ class Harness:
         res, self.child = run_sequence(backend=backend, adapter_key=self.adapter_key, config=self.spec["target"]["config"],
                                        initial_state=self.spec["initial_state"], actions=actions, limits=self.limits,
                                        broker=self.broker, cancel=self.cancel, child=self.child)
+        if res.outcome == "runner_failure":
+            # Nothing was learned about the target; do not count it as an explored sequence.
+            self.record.run_outcomes["runner_failure"] = self.record.run_outcomes.get("runner_failure", 0) + 1
+            if res.reason.startswith("isolation unavailable") or res.reason.startswith("sandbox did not start"):
+                raise IsolationUnavailable(res.reason)
+            raise RunnerFailure(res.reason)
         if count:
             self.record.sequences_tried += 1
         self.record.tool_calls += res.stats.get("tool_calls", 0)
@@ -110,8 +120,6 @@ class Harness:
         usage = res.stats.get("model_usage") or {}
         self.record.model_tokens += int(usage.get("prompt_tokens", 0)) + int(usage.get("completion_tokens", 0))
         self.record.run_outcomes[res.outcome] = self.record.run_outcomes.get(res.outcome, 0) + 1
-        if res.outcome == "runner_failure":
-            raise IsolationUnavailable(res.reason)
         violations = check(self.spec["rules"], res.ledger_events)
         if len(self.record.samples) < 12 and count:
             self.record.samples.append({"actions": actions, "outcome": res.outcome,
@@ -156,6 +164,7 @@ class Harness:
         """Drive a strategy's proposals until the budget ends or every rule is hit."""
         rule_ids = {r["id"] for r in self.spec["rules"]}
         it: Iterator[list[dict]] = iter(sequences)
+        consecutive_failures = 0
         try:
             while True:
                 why = self.exhausted()
@@ -180,7 +189,17 @@ class Harness:
                 if key in self.seen:
                     continue
                 self.seen.add(key)
-                outcome, violations, _ = self.run(actions)
+                try:
+                    outcome, violations, _ = self.run(actions)
+                except RunnerFailure as e:
+                    self.seen.discard(key)
+                    consecutive_failures += 1
+                    self.record.errors.append(f"runner failure (sequence not counted): {str(e)[:200]}")
+                    if consecutive_failures >= 2:
+                        self.record.termination = "failed: runner or model provider unavailable"
+                        break
+                    continue
+                consecutive_failures = 0
                 for v in violations:
                     if v["rule_id"] in self.found_rules:
                         continue
@@ -198,6 +217,9 @@ class Harness:
         except IsolationUnavailable as e:
             self.record.errors.append(f"isolation unavailable: {e}")
             self.record.termination = "failed closed: isolation unavailable"
+        except RunnerFailure as e:
+            self.record.errors.append(f"runner failure while shrinking: {str(e)[:200]}")
+            self.record.termination = "failed: runner or model provider unavailable"
         finally:
             if self.child is not None:
                 self.child.close()

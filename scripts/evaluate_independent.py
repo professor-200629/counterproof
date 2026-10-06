@@ -62,13 +62,35 @@ def main() -> int:
             time.sleep(15)
     view = c.get(f"/api/challenges/{ch['id']}").json()
     evaluations = []
+    if "--recheck" in sys.argv:
+        # Re-submit sequences observed in an earlier report, rebound to this challenge.
+        import secrets
+
+        old = json.loads(Path(sys.argv[sys.argv.index("--recheck") + 1]).read_text(encoding="utf-8"))
+        for item in old.get("candidates_and_evaluations", []):
+            actions = item.get("actions") or item["candidate"].get("actions")
+            if not actions:
+                continue
+            cand = {"format": "counterproof.candidate/v1", "challenge_spec_digest": spec["digest"],
+                    "challenger": "0x" + "0" * 39 + "2", "recipient": "0x" + "0" * 39 + "2",
+                    "claimed_rule": item["candidate"]["claimed_rule"], "actions": actions,
+                    "salt": "0x" + secrets.token_hex(32),
+                    "provenance": {"strategy": "recheck", "strategy_version": "1", "note": "sequence observed in a superseded run"}}
+            ev = c.post(f"/api/challenges/{ch['id']}/submissions", json={"candidate": cand}).json()
+            while ev["status"] in ("queued", "replaying"):
+                time.sleep(10)
+                ev = c.get(f"/api/evaluations/{ev['id']}").json()
+            print(f"  recheck {cand['claimed_rule']}: evaluator outcome {ev['outcome']}")
+            evaluations.append({"source": "recheck of an earlier observation", "claimed_rule": cand["claimed_rule"],
+                                "actions": actions, "evaluation": ev})
     for cand in view["candidates"]:
         ev = c.post(f"/api/candidates/{cand['id']}/submit").json()
         while ev["status"] in ("queued", "replaying"):
             time.sleep(10)
             ev = c.get(f"/api/evaluations/{ev['id']}").json()
         print(f"  candidate {cand['claimed_rule']}: evaluator outcome {ev['outcome']}")
-        evaluations.append({"candidate": cand, "evaluation": ev})
+        full = c.get(f"/api/candidates/{cand['id']}").json()
+        evaluations.append({"source": "this run's search", "candidate": cand, "actions": full["json"]["actions"], "evaluation": ev})
     stamp = time.strftime("%Y%m%d-%H%M%S")
     report = {
         "format": "counterproof.independent-evaluation/v1",

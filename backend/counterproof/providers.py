@@ -132,17 +132,17 @@ class ModelBroker:
 
     def __call__(self, request: dict) -> dict:
         if self.client.calls >= self.max_calls:
-            raise BrokerRefused("model call budget exhausted")
+            raise BrokerRefused("model call budget exhausted", kind="budget")
         if self.max_tokens and self.used_tokens >= self.max_tokens:
-            raise BrokerRefused("model token budget exhausted")
+            raise BrokerRefused("model token budget exhausted", kind="budget")
         msgs = request.get("messages")
         if not isinstance(msgs, list) or not msgs:
-            raise BrokerRefused("request needs messages")
+            raise BrokerRefused("request needs messages", kind="request")
         try:
             return self.client.chat(msgs, tools=request.get("tools"), temperature=self.temperature,
                                     max_tokens=int(request.get("max_tokens") or 600))
         except ProviderError as e:
-            raise BrokerRefused(str(e)) from e
+            raise BrokerRefused(str(e), kind="provider") from e
 
 
 def broker_for_spec(spec: dict, budget) -> ModelBroker | None:

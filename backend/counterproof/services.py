@@ -314,6 +314,32 @@ def get_evaluation(conn: sqlite3.Connection, eid: str) -> dict:
     return e
 
 
+def retry_evaluation(conn: sqlite3.Connection, eid: str) -> dict:
+    """Re-queue an evaluation whose replays could not run (runner_failure). Earlier
+    attempts stay recorded in the summary; verdicts other than runner_failure are final."""
+    e = get_evaluation(conn, eid)
+    if e["status"] in ("queued", "replaying"):
+        return e
+    if e["outcome"] != "runner_failure":
+        raise ServiceError(f"only runner failures can be retried; this evaluation is {e['outcome']}", 409)
+    c = get_challenge(conn, e["challenge_id"])
+    if c["status"] in ("settled", "refunded"):
+        raise ServiceError(f"challenge is {c['status']}")
+    summary = e["summary"] if isinstance(e["summary"], dict) else {}
+    attempts = list(summary.get("previous_attempts", [])) + [
+        {"outcome": e["outcome"], "evidence_digest": e["evidence_digest"], "finished_at": e["finished_at"],
+         "reason": summary.get("reason")}]
+    with tx(conn):
+        jid = jobs.enqueue(conn, "evaluation", {"evaluation_id": eid})
+        conn.execute("UPDATE evaluations SET status='queued', outcome=NULL, evidence_digest=NULL, finished_at=NULL, "
+                     "job_id=?, summary=? WHERE id=?", (jid, dumps({"previous_attempts": attempts}), eid))
+        if e["candidate_id"]:
+            conn.execute("UPDATE candidates SET status='submitted' WHERE id=?", (e["candidate_id"],))
+        log_activity(conn, "evaluation.retry", f"Evaluation re-queued after a runner failure (attempt {len(attempts) + 1})",
+                     e["challenge_id"], eid)
+    return get_evaluation(conn, eid)
+
+
 def evaluation_inputs(conn: sqlite3.Connection, eid: str) -> tuple[dict, str, dict, dict]:
     e = get_evaluation(conn, eid)
     c = get_challenge(conn, e["challenge_id"])
@@ -334,6 +360,9 @@ def record_evaluation(conn: sqlite3.Connection, eid: str, bundle: dict) -> dict:
                "replays": [{k: r[k] for k in ("index", "run_outcome", "ledger_digest", "claimed_rule_violated")}
                            for r in bundle["replays"]]}
     e = get_evaluation(conn, eid)
+    prior = e["summary"].get("previous_attempts") if isinstance(e["summary"], dict) else None
+    if prior:
+        summary["previous_attempts"] = prior
     cand_status = {"verified_violation": "verified_violation", "not_reproduced": "not_reproduced",
                    "inconclusive": "inconclusive", "cancelled": "cancelled"}.get(outcome, "failed")
     with tx(conn):
