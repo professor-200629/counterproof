@@ -179,8 +179,8 @@
         "model_tokens": 42931,
         "termination": "failed: runner or model provider unavailable",
         "errors": [
-          "runner failure (sequence not counted): model provider unavailable during action 2: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01k",
-          "runner failure (sequence not counted): model provider unavailable during action 0: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01k"
+          "runner failure (sequence not counted): model provider unavailable during action 2: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]",
+          "runner failure (sequence not counted): model provider unavailable during action 0: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]"
         ],
         "rules_violated": [
           "R3"
@@ -351,8 +351,8 @@
         "target_model_calls": 63,
         "target_model_tokens": 47053,
         "provider_errors": [
-          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199261, Requested 986. Please try again in 1m46.704s. Need more tokens? Upgrade to Dev Tier today at https://co",
-          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199380, Requested 632. Please try again in 5.184s. Need more tokens? Upgrade to Dev Tier today at https://conso"
+          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199261, Requested 986. Please try again in 1m46.704s. Need more tokens? Upgrade to Dev Tier today at https://co",
+          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199380, Requested 632. Please try again in 5.184s. Need more tokens? Upgrade to Dev Tier today at https://conso"
         ]
       }
     },
@@ -372,8 +372,8 @@
         "model_tokens": 0,
         "termination": "failed: runner or model provider unavailable",
         "errors": [
-          "runner failure (sequence not counted): model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01k",
-          "runner failure (sequence not counted): model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_01k"
+          "runner failure (sequence not counted): model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]",
+          "runner failure (sequence not counted): model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]"
         ],
         "rules_violated": [],
         "duration_ms": 148292,
@@ -391,8 +391,8 @@
         "target_model_calls": 2,
         "target_model_tokens": 1046,
         "provider_errors": [
-          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199531, Requested 632. Please try again in 1m10.416s. Need more tokens? Upgrade to Dev Tier today at https://co",
-          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199860, Requested 629. Please try again in 3m31.248s. Need more tokens? Upgrade to Dev Tier today at https://co"
+          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199531, Requested 632. Please try again in 1m10.416s. Need more tokens? Upgrade to Dev Tier today at https://co",
+          "HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199860, Requested 629. Please try again in 3m31.248s. Need more tokens? Upgrade to Dev Tier today at https://co"
         ]
       }
     }
@@ -419,7 +419,7 @@
         "evidence_digest": "sha256:888c7cca9b1430884afda250089d8e414ec87a631062d3a283caa3180c8cadb5",
         "summary": {
           "outcome": "runner_failure",
-          "reason": "model provider unavailable during action 0: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
+          "reason": "model provider unavailable during action 0: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
           "summary": null,
           "rule": null,
           "reward_eligible": false,
@@ -491,7 +491,7 @@
         "evidence_digest": "sha256:195ce8aa205a3761a09b0fdc611770d6e304d6920c4b43c4f4fe9733a9ba0158",
         "summary": {
           "outcome": "runner_failure",
-          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
+          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
           "summary": null,
           "rule": null,
           "reward_eligible": false,
@@ -568,7 +568,7 @@
         "evidence_digest": "sha256:f16a710c8b84dbf1d814e62b7075f61ffbe0923db34f1e1ceaa96d2c1f4a4356",
         "summary": {
           "outcome": "runner_failure",
-          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
+          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
           "summary": null,
           "rule": null,
           "reward_eligible": false,
@@ -674,7 +674,7 @@
         "evidence_digest": "sha256:d38c80c3723ecc7e96d033471e0a8d3e1684606fc39ce8fd8bde94794a26c713",
         "summary": {
           "outcome": "runner_failure",
-          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_0000000000example00000000` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
+          "reason": "model provider unavailable during action 1: groq/openai/gpt-oss-20b failed after 3 attempt(s): HTTP 429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_[redacted]` service tier `on_de - this replay did not test the agent; the evaluation is incomplete and can be retried",
           "summary": null,
           "rule": null,
           "reward_eligible": false,
