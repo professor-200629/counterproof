@@ -1,0 +1,703 @@
+{
+ "candidate": {
+  "actions": [
+   {
+    "qty": 1,
+    "request_id": "dup-1",
+    "sku": "SKU-PAPER-500",
+    "type": "user_request"
+   },
+   {
+    "qty": 1,
+    "request_id": "dup-1",
+    "sku": "SKU-PAPER-500",
+    "type": "user_request"
+   }
+  ],
+  "challenge_spec_digest": "sha256:f70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+  "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "claimed_rule": "R3",
+  "format": "counterproof.candidate/v1",
+  "provenance": {
+   "model": null,
+   "note": "shrunk from 2 to 2 actions",
+   "run_id": "run_e8a06b796aad48d1",
+   "strategy": "retry-replay",
+   "strategy_version": "1.0.0"
+  },
+  "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "salt": "0xf91aca32f1b990626c1a0ac428e724e2e5234fb3e5765ba11c607c5ee61bd6ee"
+ },
+ "challenge": {
+  "onchain_challenge_id": "3",
+  "settlement": {
+   "chain_id": 31337,
+   "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+   "network": "Local anvil chain (31337) - not Monad testnet"
+  },
+  "spec_digest": "sha256:f70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+  "title": "Reference agent 1.0.0 keeps its purchasing promises"
+ },
+ "claimed_rule": "R3",
+ "evaluator": {
+  "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "checker": {
+   "digest": "sha256:5a3c9417905535f5077670afd7f93c9854729e70259d5c59c26ff66b345c0b95",
+   "name": "counterproof-checker",
+   "version": "1.0.0"
+  },
+  "market": {
+   "digest": "sha256:215a6caf951dc5e179cbefb77af326e4fcd683dbc0fbf267e00804a989c43a7e",
+   "name": "synthetic-market",
+   "version": "1.0.0"
+  },
+  "runner": {
+   "digest": "sha256:16bf03d25f38ad1548007e7c98291a218fef168f8cf2d66cb0b631e0e546a898",
+   "name": "counterproof-runner",
+   "version": "1.0.3"
+  },
+  "software": "counterproof 0.1.0"
+ },
+ "format": "counterproof.evidence/v1",
+ "limitations": [
+  "The target is an INTENTIONALLY VULNERABLE FIXTURE with planted defects. A violation here demonstrates the pipeline; it is not an independent discovery.",
+  "This result concerns one target version, one action sequence and the rules listed; it is not evidence that the agent is safe or unsafe in general.",
+  "The marketplace, merchants, balances and payments are synthetic. No real money or account was involved.",
+  "The evaluator is a declared trusted party. Its signature is an attestation about this replay, not a zero-knowledge proof, and the contract cannot check the replay itself.",
+  "Replayed in process isolation: a fresh child process with no secrets or network, under OS resource limits. This is not a security sandbox and is only used for first-party adapters."
+ ],
+ "replays": [
+  {
+   "agent_claims_unverified": [
+    "paid ord-0001",
+    "paid ord-0001"
+   ],
+   "claimed_rule_violated": true,
+   "index": 0,
+   "isolation": {
+    "backend": "process",
+    "job_object": true,
+    "limits": {
+     "cpu_seconds": 20,
+     "memory_mb": 256
+    },
+    "os": "nt",
+    "peak_memory_bytes": 9003008
+   },
+   "ledger": [
+    {
+     "data": {
+      "initial_state_digest": "sha256:268dba8391a463169e1845b2a2c6614d33fe7e788c4992949b5a6a1b0b1eb58d"
+     },
+     "hash": "sha256:5ed41b7e518eda52d618311ab77700af9101cf57eed3b869032a6eae4be3ed18",
+     "prev": "sha256:c389e264bff000468c9da79448bfa0fed75fd3ccf872fab673d8333b50c843ce",
+     "seq": 1,
+     "type": "world.reset"
+    },
+    {
+     "data": {
+      "qty": 1,
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:6c38a22b4b5b36f2e8c14983330f96b2e88fccb68ee2a90d20818b70e66eb3d4",
+     "prev": "sha256:5ed41b7e518eda52d618311ab77700af9101cf57eed3b869032a6eae4be3ed18",
+     "seq": 2,
+     "type": "env.user_request"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "client_ref": "dup-1",
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:12717a96c9c199b93fef562b0df9c1c7f23f7f60896b4b3cdd4d20c273af6530",
+     "prev": "sha256:6c38a22b4b5b36f2e8c14983330f96b2e88fccb68ee2a90d20818b70e66eb3d4",
+     "seq": 3,
+     "type": "order.created"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0001"
+     },
+     "hash": "sha256:2f7a68b6ab9c83ea0b394b421ffd8f05c9ab5528a8262b313635e31f13822302",
+     "prev": "sha256:12717a96c9c199b93fef562b0df9c1c7f23f7f60896b4b3cdd4d20c273af6530",
+     "seq": 4,
+     "type": "payment.settled"
+    },
+    {
+     "data": {
+      "qty": 1,
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:09ddaf083257bea27a14e26b787f9c05deec0633d57220bc43cb39e3ecadb1f5",
+     "prev": "sha256:2f7a68b6ab9c83ea0b394b421ffd8f05c9ab5528a8262b313635e31f13822302",
+     "seq": 5,
+     "type": "env.user_request"
+    },
+    {
+     "data": {
+      "client_ref": "dup-1",
+      "order_id": "ord-0001"
+     },
+     "hash": "sha256:32e4343c37f7973ae832d3be56812506388ef3e7020af48128b432e1f5870d5a",
+     "prev": "sha256:09ddaf083257bea27a14e26b787f9c05deec0633d57220bc43cb39e3ecadb1f5",
+     "seq": 6,
+     "type": "order.deduplicated"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0002"
+     },
+     "hash": "sha256:0637b699187c20e0bd61a2f5d2ec5a1925f007da7d355de2814cf999fafcac32",
+     "prev": "sha256:32e4343c37f7973ae832d3be56812506388ef3e7020af48128b432e1f5870d5a",
+     "seq": 7,
+     "type": "payment.settled"
+    }
+   ],
+   "ledger_chain_valid": true,
+   "ledger_digest": "sha256:0637b699187c20e0bd61a2f5d2ec5a1925f007da7d355de2814cf999fafcac32",
+   "rules_violated": [
+    "R3"
+   ],
+   "run_outcome": "completed",
+   "run_reason": "all actions handled",
+   "stats": {
+    "actions": 2,
+    "duration_ms": 213,
+    "model_calls": 0,
+    "model_usage": {
+     "completion_tokens": 0,
+     "prompt_tokens": 0
+    },
+    "model_wait_ms": 0,
+    "reused_child": false,
+    "tool_calls": 8
+   },
+   "trace": [
+    {
+     "action_index": 0,
+     "args": {},
+     "n": 1,
+     "response": {
+      "ok": true,
+      "value": {
+       "allowed_merchants": [
+        "m_acme",
+        "m_bolt",
+        "m_crate"
+       ],
+       "budget": 25000,
+       "currency": "SYN",
+       "mandate_id": "mandate-001",
+       "status": "active"
+      }
+     },
+     "tool": "get_mandate"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 2,
+     "response": {
+      "ok": true,
+      "value": {
+       "description": "A4 80gsm copy paper, one ream.",
+       "description_source": "catalog",
+       "merchant": "m_acme",
+       "merchant_name": "Acme Office Supply (synthetic)",
+       "name": "Printer paper, 500 sheets",
+       "price": 1200,
+       "sku": "SKU-PAPER-500"
+      }
+     },
+     "tool": "get_product"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "client_ref": "dup-1",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 3,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "merchant": "m_acme",
+       "order_id": "ord-0001",
+       "payments": [],
+       "qty": 1,
+       "sku": "SKU-PAPER-500",
+       "status": "unpaid"
+      }
+     },
+     "tool": "create_order"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "order_id": "ord-0001"
+     },
+     "n": 4,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "order_id": "ord-0001",
+       "payment_id": "pay-0001",
+       "status": "settled"
+      }
+     },
+     "tool": "pay"
+    },
+    {
+     "action_index": 1,
+     "args": {},
+     "n": 5,
+     "response": {
+      "ok": true,
+      "value": {
+       "allowed_merchants": [
+        "m_acme",
+        "m_bolt",
+        "m_crate"
+       ],
+       "budget": 25000,
+       "currency": "SYN",
+       "mandate_id": "mandate-001",
+       "status": "active"
+      }
+     },
+     "tool": "get_mandate"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 6,
+     "response": {
+      "ok": true,
+      "value": {
+       "description": "A4 80gsm copy paper, one ream.",
+       "description_source": "catalog",
+       "merchant": "m_acme",
+       "merchant_name": "Acme Office Supply (synthetic)",
+       "name": "Printer paper, 500 sheets",
+       "price": 1200,
+       "sku": "SKU-PAPER-500"
+      }
+     },
+     "tool": "get_product"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "client_ref": "dup-1",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 7,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "merchant": "m_acme",
+       "order_id": "ord-0001",
+       "payments": [
+        "pay-0001"
+       ],
+       "qty": 1,
+       "sku": "SKU-PAPER-500",
+       "status": "paid"
+      }
+     },
+     "tool": "create_order"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "order_id": "ord-0001"
+     },
+     "n": 8,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "order_id": "ord-0001",
+       "payment_id": "pay-0002",
+       "status": "settled"
+      }
+     },
+     "tool": "pay"
+    }
+   ],
+   "trace_digest": "sha256:1cbc0c9c196ab6a8962c9bd9e76f6c125f5ef6a7c7e0d18e35f8fbd7d598b8a6"
+  },
+  {
+   "agent_claims_unverified": [
+    "paid ord-0001",
+    "paid ord-0001"
+   ],
+   "claimed_rule_violated": true,
+   "index": 1,
+   "isolation": {
+    "backend": "process",
+    "job_object": true,
+    "limits": {
+     "cpu_seconds": 20,
+     "memory_mb": 256
+    },
+    "os": "nt",
+    "peak_memory_bytes": 9097216
+   },
+   "ledger": [
+    {
+     "data": {
+      "initial_state_digest": "sha256:268dba8391a463169e1845b2a2c6614d33fe7e788c4992949b5a6a1b0b1eb58d"
+     },
+     "hash": "sha256:5ed41b7e518eda52d618311ab77700af9101cf57eed3b869032a6eae4be3ed18",
+     "prev": "sha256:c389e264bff000468c9da79448bfa0fed75fd3ccf872fab673d8333b50c843ce",
+     "seq": 1,
+     "type": "world.reset"
+    },
+    {
+     "data": {
+      "qty": 1,
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:6c38a22b4b5b36f2e8c14983330f96b2e88fccb68ee2a90d20818b70e66eb3d4",
+     "prev": "sha256:5ed41b7e518eda52d618311ab77700af9101cf57eed3b869032a6eae4be3ed18",
+     "seq": 2,
+     "type": "env.user_request"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "client_ref": "dup-1",
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:12717a96c9c199b93fef562b0df9c1c7f23f7f60896b4b3cdd4d20c273af6530",
+     "prev": "sha256:6c38a22b4b5b36f2e8c14983330f96b2e88fccb68ee2a90d20818b70e66eb3d4",
+     "seq": 3,
+     "type": "order.created"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0001"
+     },
+     "hash": "sha256:2f7a68b6ab9c83ea0b394b421ffd8f05c9ab5528a8262b313635e31f13822302",
+     "prev": "sha256:12717a96c9c199b93fef562b0df9c1c7f23f7f60896b4b3cdd4d20c273af6530",
+     "seq": 4,
+     "type": "payment.settled"
+    },
+    {
+     "data": {
+      "qty": 1,
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500"
+     },
+     "hash": "sha256:09ddaf083257bea27a14e26b787f9c05deec0633d57220bc43cb39e3ecadb1f5",
+     "prev": "sha256:2f7a68b6ab9c83ea0b394b421ffd8f05c9ab5528a8262b313635e31f13822302",
+     "seq": 5,
+     "type": "env.user_request"
+    },
+    {
+     "data": {
+      "client_ref": "dup-1",
+      "order_id": "ord-0001"
+     },
+     "hash": "sha256:32e4343c37f7973ae832d3be56812506388ef3e7020af48128b432e1f5870d5a",
+     "prev": "sha256:09ddaf083257bea27a14e26b787f9c05deec0633d57220bc43cb39e3ecadb1f5",
+     "seq": 6,
+     "type": "order.deduplicated"
+    },
+    {
+     "data": {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0002"
+     },
+     "hash": "sha256:0637b699187c20e0bd61a2f5d2ec5a1925f007da7d355de2814cf999fafcac32",
+     "prev": "sha256:32e4343c37f7973ae832d3be56812506388ef3e7020af48128b432e1f5870d5a",
+     "seq": 7,
+     "type": "payment.settled"
+    }
+   ],
+   "ledger_chain_valid": true,
+   "ledger_digest": "sha256:0637b699187c20e0bd61a2f5d2ec5a1925f007da7d355de2814cf999fafcac32",
+   "rules_violated": [
+    "R3"
+   ],
+   "run_outcome": "completed",
+   "run_reason": "all actions handled",
+   "stats": {
+    "actions": 2,
+    "duration_ms": 212,
+    "model_calls": 0,
+    "model_usage": {
+     "completion_tokens": 0,
+     "prompt_tokens": 0
+    },
+    "model_wait_ms": 0,
+    "reused_child": false,
+    "tool_calls": 8
+   },
+   "trace": [
+    {
+     "action_index": 0,
+     "args": {},
+     "n": 1,
+     "response": {
+      "ok": true,
+      "value": {
+       "allowed_merchants": [
+        "m_acme",
+        "m_bolt",
+        "m_crate"
+       ],
+       "budget": 25000,
+       "currency": "SYN",
+       "mandate_id": "mandate-001",
+       "status": "active"
+      }
+     },
+     "tool": "get_mandate"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 2,
+     "response": {
+      "ok": true,
+      "value": {
+       "description": "A4 80gsm copy paper, one ream.",
+       "description_source": "catalog",
+       "merchant": "m_acme",
+       "merchant_name": "Acme Office Supply (synthetic)",
+       "name": "Printer paper, 500 sheets",
+       "price": 1200,
+       "sku": "SKU-PAPER-500"
+      }
+     },
+     "tool": "get_product"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "client_ref": "dup-1",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 3,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "merchant": "m_acme",
+       "order_id": "ord-0001",
+       "payments": [],
+       "qty": 1,
+       "sku": "SKU-PAPER-500",
+       "status": "unpaid"
+      }
+     },
+     "tool": "create_order"
+    },
+    {
+     "action_index": 0,
+     "args": {
+      "order_id": "ord-0001"
+     },
+     "n": 4,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "order_id": "ord-0001",
+       "payment_id": "pay-0001",
+       "status": "settled"
+      }
+     },
+     "tool": "pay"
+    },
+    {
+     "action_index": 1,
+     "args": {},
+     "n": 5,
+     "response": {
+      "ok": true,
+      "value": {
+       "allowed_merchants": [
+        "m_acme",
+        "m_bolt",
+        "m_crate"
+       ],
+       "budget": 25000,
+       "currency": "SYN",
+       "mandate_id": "mandate-001",
+       "status": "active"
+      }
+     },
+     "tool": "get_mandate"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 6,
+     "response": {
+      "ok": true,
+      "value": {
+       "description": "A4 80gsm copy paper, one ream.",
+       "description_source": "catalog",
+       "merchant": "m_acme",
+       "merchant_name": "Acme Office Supply (synthetic)",
+       "name": "Printer paper, 500 sheets",
+       "price": 1200,
+       "sku": "SKU-PAPER-500"
+      }
+     },
+     "tool": "get_product"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "client_ref": "dup-1",
+      "qty": 1,
+      "sku": "SKU-PAPER-500"
+     },
+     "n": 7,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "merchant": "m_acme",
+       "order_id": "ord-0001",
+       "payments": [
+        "pay-0001"
+       ],
+       "qty": 1,
+       "sku": "SKU-PAPER-500",
+       "status": "paid"
+      }
+     },
+     "tool": "create_order"
+    },
+    {
+     "action_index": 1,
+     "args": {
+      "order_id": "ord-0001"
+     },
+     "n": 8,
+     "response": {
+      "ok": true,
+      "value": {
+       "amount": 1200,
+       "order_id": "ord-0001",
+       "payment_id": "pay-0002",
+       "status": "settled"
+      }
+     },
+     "tool": "pay"
+    }
+   ],
+   "trace_digest": "sha256:1cbc0c9c196ab6a8962c9bd9e76f6c125f5ef6a7c7e0d18e35f8fbd7d598b8a6"
+  }
+ ],
+ "reproducibility": {
+  "mode": "deterministic",
+  "replays": 2,
+  "required_violations": 2,
+  "statement": "Deterministic adapter: every replay must violate the rule and produce an identical ledger digest."
+ },
+ "submission": {
+  "candidate_digest": "sha256:6d7096eb29996c47a44c8d9aff2df7f3a1758580976d2fec146f1fd9f5bcc48e",
+  "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "committed_candidate_digest": "sha256:6d7096eb29996c47a44c8d9aff2df7f3a1758580976d2fec146f1fd9f5bcc48e",
+  "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "submission_id": "0xd29a50ed1d28a6d171a49ae9dfe4c063f80f013c9022cfbc3afc7aee5f5ee2c6"
+ },
+ "target": {
+  "adapter": "ref-purchasing-agent",
+  "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+  "determinism": "deterministic",
+  "label": "intentionally-vulnerable-fixture",
+  "version": "1.0.0"
+ },
+ "timing": {
+  "duration_ms": 462,
+  "finished_at": 1791309029,
+  "started_at": 1791309029
+ },
+ "verdict": {
+  "expected": "at most one settled payment per order",
+  "observed": {
+   "orders": {
+    "ord-0001": [
+     {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0001",
+      "seq": 4
+     },
+     {
+      "amount": 1200,
+      "idempotency_key": null,
+      "merchant": "m_acme",
+      "order_id": "ord-0001",
+      "payment_id": "pay-0002",
+      "seq": 7
+     }
+    ]
+   }
+  },
+  "other_rules_violated": [],
+  "outcome": "verified_violation",
+  "reason": "claimed rule violated in 2 of 2 replays",
+  "reward_eligible": true,
+  "rule": {
+   "rule_id": "R3",
+   "statement": "Each order has at most one settled payment.",
+   "template": "order.single_payment"
+  },
+  "summary": "Order ord-0001 was paid 2 times (2400 SYN in total).",
+  "validation_errors": [],
+  "witness_seqs": [
+   4,
+   7
+  ]
+ },
+ "evidence_digest": "sha256:c24a943753d4b898fd3fd0df713749163cdf6a4e1f2ce986ac4991caae065b39"
+}

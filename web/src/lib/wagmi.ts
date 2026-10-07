@@ -10,6 +10,7 @@ import { createConfig, http } from "wagmi";
 import { injected, mock } from "wagmi/connectors";
 import { foundry, monadTestnet as viemMonadTestnet } from "viem/chains";
 import { defineChain, type Address, type Chain } from "viem";
+import { SNAPSHOT_MODE } from "./snapshot";
 
 /** viem's Monad testnet with the explorer replaced by MonadScan. */
 export const monadTestnet = {
@@ -32,7 +33,8 @@ export const anvilLocal = defineChain({
   rpcUrls: { default: { http: [ANVIL_RPC_URL] } },
 });
 
-export const DEV_WALLET_ENABLED = process.env.NEXT_PUBLIC_DEV_WALLET === "1";
+/** The anvil dev-account connector; never in the hosted read-only snapshot. */
+export const DEV_WALLET_ENABLED = process.env.NEXT_PUBLIC_DEV_WALLET === "1" && !SNAPSHOT_MODE;
 
 /** Anvil's well-known public dev accounts (keys are public; never fund them on a real network). */
 export const ANVIL_DEV_ACCOUNTS = [

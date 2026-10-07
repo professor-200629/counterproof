@@ -10,6 +10,7 @@ import type { ChallengeListItem } from "@/lib/api";
 import { formatWei } from "@/lib/chain";
 import { formatNumber, plural } from "@/lib/format";
 import { Deadlines } from "./deadline";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 export interface ChallengesTableProps {
   items: ChallengeListItem[];
@@ -151,6 +152,7 @@ function ResultsCell({ c }: { c: ChallengeListItem }) {
       {active_runs > 0 ? (
         <li className="text-warn">
           <span className="tabular">{formatNumber(active_runs)}</span> {plural(active_runs, "run")} queued or running
+          {SNAPSHOT_MODE ? " when recorded" : ""}
         </li>
       ) : null}
     </ul>

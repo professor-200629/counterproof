@@ -1,0 +1,28 @@
+{
+ "challenge": {
+  "id": 9,
+  "spec_digest": "sha256:f5e6af997bfe87881952f6645dacc5b3135a2fbacf834d5604e6d4ba31c9f301",
+  "status": "refunded",
+  "network": "anvil-local",
+  "chain_id": 31337,
+  "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "onchain_id": "4",
+  "fund_tx": "0xead6290ee0921fcdc5eea7f3f3a39e4d4f68eb55f2c3a369155109cb2d16ff1f",
+  "reward_wei": "5000000000000000",
+  "note": null,
+  "created_at": 1791309032,
+  "updated_at": 1791309034
+ },
+ "attestation": null,
+ "onchain": {
+  "publisher": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "evaluator": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "submission_deadline": 1791309632,
+  "settlement_deadline": 1791311432,
+  "status": "refunded",
+  "reward_wei": "5000000000000000",
+  "spec_digest": "sha256:f5e6af997bfe87881952f6645dacc5b3135a2fbacf834d5604e6d4ba31c9f301",
+  "settled_submission": "0x0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "explorer_template": null
+}

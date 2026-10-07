@@ -18,6 +18,8 @@ import { MatchMark } from "@/components/ui/match-mark";
 import { sameHex } from "@/lib/format";
 import type { SignatureBinding } from "@/components/settlement/use-recovered-signer";
 import { BindingMark } from "./who-checked";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /** The parts of an attestation this panel shows (AttestationRow and SettlementAttestation both fit). */
 export interface AttestationLike {
@@ -83,18 +85,22 @@ export function AttestationPanel({ evaluation, bundle, challenge, attestation, b
       body = (
         <div className="space-y-3">
           <p className="text-sm text-muted">
-            No attestation yet. Requesting one asks the evaluator&apos;s signing service to sign an EIP-712 attestation of this
+            No attestation {SNAPSHOT_MODE ? "had been issued when this snapshot was recorded" : "yet"}. Requesting one asks the evaluator&apos;s signing service to sign an EIP-712 attestation of this
             verdict, binding the spec, submission, candidate and evidence digests and the recipient fixed at commit time.
           </p>
-          <Button
-            variant="primary"
-            icon={<FileSignature />}
-            busy={attest.isPending}
-            busyLabel="Requesting attestation..."
-            onClick={() => attest.mutate(evaluation.id)}
-          >
-            Request attestation
-          </Button>
+          {SNAPSHOT_MODE ? (
+            <ReadOnlyNote action="Requesting an attestation" />
+          ) : (
+            <Button
+              variant="primary"
+              icon={<FileSignature />}
+              busy={attest.isPending}
+              busyLabel="Requesting attestation..."
+              onClick={() => attest.mutate(evaluation.id)}
+            >
+              Request attestation
+            </Button>
+          )}
           {attest.isError ? <ErrorState error={attest.error} title="The attestation was not issued" compact /> : null}
           {attest.isSuccess ? (
             <p role="status" className="text-sm text-ok">

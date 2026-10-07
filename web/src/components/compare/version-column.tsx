@@ -7,7 +7,7 @@ import { Digest } from "@/components/ui/digest";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { ErrorState, Loading } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { evidenceDownloadUrl, type EvidenceBundle, type SpecRule } from "@/lib/api";
+import { evidenceDownloadUrl, evidenceFilename, type EvidenceBundle, type SpecRule } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatNumber, plural } from "@/lib/format";
 import { statusMeta, type StatusDomain } from "@/lib/status";
@@ -168,7 +168,7 @@ function BundleFacts({
           </ButtonLink>
         ) : null}
         {digest ? (
-          <ButtonLink href={evidenceDownloadUrl(digest)} external download size="sm" variant="ghost" icon={<Download />}>
+          <ButtonLink href={evidenceDownloadUrl(digest)} external download={evidenceFilename(digest)} size="sm" variant="ghost" icon={<Download />}>
             Download evidence JSON
           </ButtonLink>
         ) : null}

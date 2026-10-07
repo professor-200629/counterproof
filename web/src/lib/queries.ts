@@ -1,7 +1,8 @@
 /**
  * react-query hooks over lib/api.ts. Polling is only ever driven by real backend state:
  * a query polls every 1.5 s while something it shows is queued / running / replaying and
- * stops by itself when that work finishes.
+ * stops by itself when that work finishes. In snapshot mode (lib/snapshot.ts) nothing
+ * polls or refetches: the data is a recording and cannot change.
  */
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,6 +14,7 @@ import {
   type RunCreate,
   type SpecRequest,
 } from "./api";
+import { SNAPSHOT_MODE } from "./snapshot";
 import { isChallengeActive, isEvaluationActive, isRegressionActive, isRunActive } from "./status";
 
 export const POLL_MS = 1500;
@@ -47,7 +49,10 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 export function makeQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
-      queries: { staleTime: 5_000, retry: shouldRetry, refetchOnWindowFocus: true },
+      // A recorded snapshot never changes: fetch each file once, never refetch on focus.
+      queries: SNAPSHOT_MODE
+        ? { staleTime: Infinity, retry: shouldRetry, refetchOnWindowFocus: false, refetchOnReconnect: false }
+        : { staleTime: 5_000, retry: shouldRetry, refetchOnWindowFocus: true },
       mutations: { retry: false },
     },
   });
@@ -58,8 +63,15 @@ export interface QueryOpts {
   enabled?: boolean;
 }
 
-function pollWhile<T>(active: (data: T | undefined) => boolean) {
-  return (query: { state: { data: T | undefined } }): number | false => (active(query.state.data) ? POLL_MS : false);
+/** refetchInterval that polls while `active(data)`; never in snapshot mode. */
+export function pollWhile<T>(active: (data: T | undefined) => boolean) {
+  return (query: { state: { data: T | undefined } }): number | false =>
+    !SNAPSHOT_MODE && active(query.state.data) ? POLL_MS : false;
+}
+
+/** refetchInterval for an explicit `poll` flag; never in snapshot mode. */
+export function pollIf(poll: boolean | undefined): number | false {
+  return !SNAPSHOT_MODE && poll ? POLL_MS : false;
 }
 
 // ---------------------------------------------------------------------------- reads
@@ -124,7 +136,7 @@ export function useSettlement(id: number | string | null | undefined, opts: Quer
     queryKey: qk.settlement(id ?? ""),
     queryFn: () => api.getSettlement(id as number | string),
     enabled: (opts.enabled ?? true) && id !== null && id !== undefined && id !== "",
-    refetchInterval: opts.poll ? POLL_MS : false,
+    refetchInterval: pollIf(opts.poll),
   });
 }
 

@@ -4,7 +4,8 @@ Every GET response the console needs is saved under web/public/snapshot/ with th
 path as the API (e.g. /api/challenges/1 -> snapshot/api/challenges/1.json), plus a
 manifest recording when and from which network it was taken. The console's snapshot mode
 (NEXT_PUBLIC_SNAPSHOT=1) reads these files, disables every action and labels all data as
-"recorded". On-chain state can still be read live by the browser.
+"recorded". The browser reads nothing from the chain, except credits() live from the
+public RPC for a Monad testnet snapshot (labelled as such); a local anvil chain is never read.
 
 Usage: backend\\.venv\\Scripts\\python scripts\\export_snapshot.py [--api http://127.0.0.1:8010]
 """
@@ -49,6 +50,10 @@ def secret_values() -> set[str]:
 
 def main() -> int:
     c = httpx.Client(base_url=API, timeout=60)
+    try:
+        c.get("/api/health").raise_for_status()
+    except httpx.HTTPError as e:
+        raise SystemExit(f"evaluator API not reachable at {API} ({type(e).__name__}); the existing snapshot was left untouched")
     if OUT.exists():
         shutil.rmtree(OUT)
     saved: list[str] = []
@@ -85,7 +90,7 @@ def main() -> int:
         for k, st in (("funded", "funded"), ("settled", "settled")):
             overview[k] = sum(1 for ch in chosen if ch["status"] == st)
         overview["verified_violations"] = sum(ch["counts"]["verified"] for ch in chosen)
-        overview["active_runs"] = 0
+        overview["active_runs"] = sum(ch["counts"]["active_runs"] for ch in chosen)
     save("/api/overview", overview)
     for ch in chosen:
         view = get(f"/api/challenges/{ch['id']}")
@@ -110,6 +115,10 @@ def main() -> int:
             get(f"/api/evaluations/{ev['id']}")
             if ev.get("evidence_digest"):
                 get(f"/api/evidence/{ev['evidence_digest']}")
+            summary = ev.get("summary") if isinstance(ev.get("summary"), dict) else {}
+            for attempt in summary.get("previous_attempts", []):
+                if attempt.get("evidence_digest"):
+                    get(f"/api/evidence/{attempt['evidence_digest']}")
     manifest = {"format": "counterproof.snapshot/v1", "taken_at": int(time.time()),
                 "network": cfg["network"], "network_label": cfg["network_label"], "chain_id": cfg["chain"]["chain_id"],
                 "contract": cfg["chain"]["contract"], "explorer_tx_url": cfg["chain"]["explorer_tx_url"],

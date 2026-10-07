@@ -1,0 +1,28 @@
+[
+ {
+  "id": "reg_8dc93155a90243d1",
+  "source_candidate_id": "cand_3206e9afb8d841ee",
+  "source_challenge_id": 8,
+  "target_key": "ref-purchasing-agent@1.1.0",
+  "spec_digest": "sha256:28c642405715448990b862ce2a48769888d6ba7b00c1390f259dbdc0c17ed13f",
+  "job_id": "job_feb0e8efc47f4bc8",
+  "status": "not_reproduced",
+  "outcome": "not_reproduced",
+  "evidence_digest": "sha256:ee4e18a126909794723fe1482308d4235a0b9bf319e2fe8c2f5e69a71f75f28b",
+  "created_at": 1791309031,
+  "finished_at": 1791309032
+ },
+ {
+  "id": "reg_8e03e71fc05749ce",
+  "source_candidate_id": "cand_34b93fd31be84183",
+  "source_challenge_id": 8,
+  "target_key": "ref-purchasing-agent@1.1.0",
+  "spec_digest": "sha256:9d652a1cef973bb17d2a86097b9f6e7de157e0763509a46645a4d975a90e01b7",
+  "job_id": "job_c3aede93eb4746fa",
+  "status": "not_reproduced",
+  "outcome": "not_reproduced",
+  "evidence_digest": "sha256:5e3ede57ba803400170c2710745ed152694281d12bde2a84d0533ce0fbfcf4a6",
+  "created_at": 1791309030,
+  "finished_at": 1791309031
+ }
+]

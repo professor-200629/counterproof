@@ -16,7 +16,17 @@ import type { ChallengeView, NetworkKind, OnchainChallenge, SettlementAttestatio
 import { formatWei, settleArgs, toChecksumAddress, txNetworkPhrase } from "@/lib/chain";
 import { useTrackedTx } from "@/lib/tx";
 import type { SupportedChainId } from "@/lib/wagmi";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { sameAddress } from "./derive";
+
+/**
+ * Whether this page may read the contract itself. Always in the local console; in the hosted
+ * snapshot only on Monad testnet (public RPC), never the evaluator owner's local anvil chain.
+ */
+export function canReadChainLive(network: NetworkKind): boolean {
+  return !SNAPSHOT_MODE || network === "monad-testnet";
+}
 
 export interface ChainTarget {
   /** CounterProof contract the challenge lives in. */
@@ -109,50 +119,59 @@ export function SettleAction({ view, attestation, onchain, nowSec, contract, cha
           {formatWei(reward, network)}{" "}
           <span className="text-xs text-muted">{onchain ? "(read from the contract by the backend)" : "(from the backend's challenge record)"}</span>
         </dd>
-        <dt className="text-muted">Relaying from</dt>
-        <dd className="min-w-0">
-          {connection.address ? (
-            <Address
-              value={connection.address}
-              label="your wallet address"
-              note={sameAddress(connection.address, recipient) ? "you are the recipient" : "not the recipient - the reward still goes to the recipient"}
-            />
-          ) : (
-            <span className="text-muted">no wallet connected</span>
-          )}
-        </dd>
+        {SNAPSHOT_MODE ? null : (
+          <>
+            <dt className="text-muted">Relaying from</dt>
+            <dd className="min-w-0">
+              {connection.address ? (
+                <Address
+                  value={connection.address}
+                  label="your wallet address"
+                  note={sameAddress(connection.address, recipient) ? "you are the recipient" : "not the recipient - the reward still goes to the recipient"}
+                />
+              ) : (
+                <span className="text-muted">no wallet connected</span>
+              )}
+            </dd>
+          </>
+        )}
         <dt className="text-muted">Settlement window</dt>
         <dd className="text-sm">
           <Countdown to={deadline} prefix="Closes in" expiredText="Closed" /> <span className="text-xs text-muted">(<DateTime ts={deadline} />)</span>
         </dd>
       </dl>
 
-      {!connection.address ? <ConnectPrompt what="relay the settlement" /> : null}
+      {SNAPSHOT_MODE ? <ReadOnlyNote action="Relaying settle() to the contract" /> : null}
+      {SNAPSHOT_MODE ? null : (
+        <>
+          {!connection.address ? <ConnectPrompt what="relay the settlement" /> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="primary"
-          icon={<Send />}
-          onClick={onRelay}
-          disabled={!connection.address || reasons.length > 0}
-          busy={tx.isBusy}
-          busyLabel={tx.state.status === "awaiting_signature" ? "Confirm in your wallet" : "Waiting for the receipt"}
-        >
-          Relay settle() on {txNetworkPhrase(chainId)}
-        </Button>
-        {tx.state.status !== "idle" && !tx.isBusy ? (
-          <Button variant="ghost" size="sm" onClick={tx.reset}>
-            Clear status
-          </Button>
-        ) : null}
-      </div>
-      <ReasonList reasons={reasons} />
-      {argError ? (
-        <p role="alert" className="text-sm font-medium text-bad">
-          Could not build the settle arguments from the stored attestation: {argError}
-        </p>
-      ) : null}
-      <TxStatus {...tx} label="Settlement" />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="primary"
+              icon={<Send />}
+              onClick={onRelay}
+              disabled={!connection.address || reasons.length > 0}
+              busy={tx.isBusy}
+              busyLabel={tx.state.status === "awaiting_signature" ? "Confirm in your wallet" : "Waiting for the receipt"}
+            >
+              Relay settle() on {txNetworkPhrase(chainId)}
+            </Button>
+            {tx.state.status !== "idle" && !tx.isBusy ? (
+              <Button variant="ghost" size="sm" onClick={tx.reset}>
+                Clear status
+              </Button>
+            ) : null}
+          </div>
+          <ReasonList reasons={reasons} />
+          {argError ? (
+            <p role="alert" className="text-sm font-medium text-bad">
+              Could not build the settle arguments from the stored attestation: {argError}
+            </p>
+          ) : null}
+          <TxStatus {...tx} label="Settlement" />
+        </>
+      )}
     </div>
   );
 }
@@ -169,8 +188,10 @@ export interface WithdrawActionProps extends ChainTarget {
 export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, chainId, network }: WithdrawActionProps) {
   const connection = useConnection();
   const beneficiaryAddr = toChecksumAddress(beneficiary) as ViemAddress | null;
-  const me = connection.address;
+  // The snapshot has no wallet: there is no "me".
+  const me = SNAPSHOT_MODE ? undefined : connection.address;
   const meIsBeneficiary = sameAddress(me, beneficiary);
+  const live = canReadChainLive(network);
 
   const beneficiaryCredits = useReadContract({
     address: contract ?? undefined,
@@ -178,7 +199,7 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
     functionName: "credits",
     args: beneficiaryAddr ? [beneficiaryAddr] : undefined,
     chainId,
-    query: { enabled: !!contract && !!beneficiaryAddr && !!chainId },
+    query: { enabled: live && !!contract && !!beneficiaryAddr && !!chainId },
   });
   const myCredits = useReadContract({
     address: contract ?? undefined,
@@ -186,7 +207,7 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
     functionName: "credits",
     args: me ? [me] : undefined,
     chainId,
-    query: { enabled: !!contract && !!me && !!chainId && !meIsBeneficiary },
+    query: { enabled: live && !!contract && !!me && !!chainId && !meIsBeneficiary },
   });
 
   const tx = useTrackedTx({
@@ -215,7 +236,12 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
         <dd className="min-w-0 space-y-0.5">
           <Address value={beneficiary} label={beneficiaryRole} />
           <div className="text-sm">
-            {!contract || !chainId ? (
+            {!live ? (
+              <span className="text-muted">
+                Not read: {network === "anvil-local" ? "local anvil chain" : txNetworkPhrase(chainId)} - not reachable from this hosted
+                snapshot; values below are as recorded.
+              </span>
+            ) : !contract || !chainId ? (
               <span className="text-muted">No contract to read.</span>
             ) : beneficiaryCredits.isPending ? (
               <span className="text-muted">Reading credits({beneficiaryRole}) from {txNetworkPhrase(chainId)}.</span>
@@ -226,7 +252,11 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
             ) : (
               <>
                 <span className="font-semibold tabular text-fg">{formatWei(beneficiaryCredits.data, network)}</span>{" "}
-                <span className="text-xs text-muted">credits(), read from the contract by this page</span>
+                <span className="text-xs text-muted">
+                  {SNAPSHOT_MODE
+                    ? "credits(), read live from the contract on Monad testnet by this page (now, not at snapshot time)"
+                    : "credits(), read from the contract by this page"}
+                </span>
               </>
             )}
           </div>
@@ -252,7 +282,9 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
         sends the connected account&apos;s whole credit to that account; nobody can withdraw someone else&apos;s credit.
       </p>
 
-      {!me ? (
+      {SNAPSHOT_MODE ? (
+        <ReadOnlyNote action="Withdrawing a credit" />
+      ) : !me ? (
         <ConnectPrompt what={`withdraw (only the ${beneficiaryRole}'s own wallet can withdraw its credit)`} />
       ) : canWithdraw ? (
         <div className="flex flex-wrap items-center gap-3">
@@ -274,7 +306,7 @@ export function WithdrawAction({ view, beneficiary, beneficiaryRole, contract, c
       ) : mineQuery.isSuccess ? (
         <p className="text-sm text-muted">The connected account has no credit to withdraw.</p>
       ) : null}
-      <TxStatus {...tx} label="Withdrawal" />
+      {SNAPSHOT_MODE ? null : <TxStatus {...tx} label="Withdrawal" />}
     </div>
   );
 }
@@ -315,13 +347,22 @@ export function RefundAction({ view, onchain, nowSec, contract, chainId, network
         <Address value={publisher} label="publisher" />
         ), which the publisher then withdraws.
       </p>
-      {!open ? (
+      {!open && SNAPSHOT_MODE ? (
+        <p className="text-sm">
+          Refund was not open when recorded: settlement deadline <DateTime ts={deadline} />{" "}
+          <span className="text-xs text-muted">
+            (<Countdown to={deadline} />)
+          </span>
+        </p>
+      ) : !open ? (
         <p className="text-sm">
           <Countdown to={deadline} prefix="Refund opens in" expiredText="Refund is open" />{" "}
           <span className="text-xs text-muted">
             (settlement deadline <DateTime ts={deadline} />)
           </span>
         </p>
+      ) : SNAPSHOT_MODE ? (
+        <ReadOnlyNote action="Sending refund() to the contract" />
       ) : (
         <>
           {!connection.address ? <ConnectPrompt what="send the refund" /> : null}
@@ -345,7 +386,7 @@ export function RefundAction({ view, onchain, nowSec, contract, chainId, network
           <ReasonList reasons={reasons} />
         </>
       )}
-      <TxStatus {...tx} label="Refund" />
+      {SNAPSHOT_MODE ? null : <TxStatus {...tx} label="Refund" />}
     </div>
   );
 }

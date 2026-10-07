@@ -10,10 +10,11 @@ import { EmptyState, ErrorState, Loading } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { TimeAgo } from "@/components/ui/time";
-import { regressionExportUrl, type Regression } from "@/lib/api";
+import { regressionExportFilename, regressionExportUrl, type Regression } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { POLL_MS, useRegressionExport } from "@/lib/queries";
 import { isRegressionActive } from "@/lib/status";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 // ---------------------------------------------------------------------------- in progress
 /** A queued / replaying regression: only what the backend reports, no estimated progress. */
@@ -28,8 +29,12 @@ export function RegressionProgress({ regression }: { regression: Regression }) {
       <p className="text-sm text-muted">
         {regression.status === "queued"
           ? "Waiting for a worker. Nothing has been replayed yet."
-          : "The evaluator is replaying the sequence in a fresh synthetic marketplace. No verdict yet."}{" "}
-        This page checks again every {POLL_MS / 1000} s until the backend reports an outcome.
+          : SNAPSHOT_MODE
+            ? "Still replaying when recorded; no verdict in this recording."
+            : "The evaluator is replaying the sequence in a fresh synthetic marketplace. No verdict yet."}{" "}
+        {SNAPSHOT_MODE
+          ? "It had no outcome when this snapshot was recorded, and this recording does not update."
+          : `This page checks again every ${POLL_MS / 1000} s until the backend reports an outcome.`}
       </p>
       <JobFacts job={job} requestedAt={regression.created_at} />
     </div>
@@ -49,10 +54,10 @@ export function ExportPanel({ regression }: { regression: Regression }) {
         actions={
           finished ? (
             <>
-              <ButtonLink href={regressionExportUrl(regression.id, "json")} external download size="sm" icon={<FileJson />}>
+              <ButtonLink href={regressionExportUrl(regression.id, "json")} external download={regressionExportFilename(regression.id, "json")} size="sm" icon={<FileJson />}>
                 JSON
               </ButtonLink>
-              <ButtonLink href={regressionExportUrl(regression.id, "pytest")} external download size="sm" icon={<FileCode2 />}>
+              <ButtonLink href={regressionExportUrl(regression.id, "pytest")} external download={regressionExportFilename(regression.id, "pytest")} size="sm" icon={<FileCode2 />}>
                 pytest
               </ButtonLink>
             </>
@@ -123,7 +128,11 @@ export function RegressionList({ query, selectedId, onSelect }: RegressionListPr
       <EmptyState
         compact
         title="No regression replays yet"
-        description="Start one above: the evaluator replays a verified sequence against the version you choose."
+        description={
+          SNAPSHOT_MODE
+            ? "None had been recorded when this snapshot was taken."
+            : "Start one above: the evaluator replays a verified sequence against the version you choose."
+        }
       />
     );
   }
@@ -175,7 +184,7 @@ export function RegressionList({ query, selectedId, onSelect }: RegressionListPr
                       <ButtonLink
                         href={regressionExportUrl(r.id, "json")}
                         external
-                        download
+                        download={regressionExportFilename(r.id, "json")}
                         variant="ghost"
                         size="sm"
                         icon={<Download />}
@@ -186,7 +195,7 @@ export function RegressionList({ query, selectedId, onSelect }: RegressionListPr
                       <ButtonLink
                         href={regressionExportUrl(r.id, "pytest")}
                         external
-                        download
+                        download={regressionExportFilename(r.id, "pytest")}
                         variant="ghost"
                         size="sm"
                         icon={<Download />}

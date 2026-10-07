@@ -10,11 +10,13 @@ import { TextLink } from "@/components/ui/text-link";
 import { isBackendUnreachable, type Overview } from "@/lib/api";
 import { formatNumber, plural } from "@/lib/format";
 import { POLL_MS, useChallenges, useConfig, useOverview } from "@/lib/queries";
+import { RecordedMark } from "@/components/snapshot";
 import { ActivityFeed } from "./activity-feed";
 import { ChallengesTable } from "./challenges-table";
 import { EnvironmentPanel } from "./environment-panel";
 import { ProofLimits } from "./proof-limits";
 import { ChallengeLoop, productIntro, sortNewest } from "./shared";
+import { SNAPSHOT_MANIFEST, SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /** How many challenges the overview lists before linking to /challenges. */
 const OVERVIEW_ROWS = 6;
@@ -29,9 +31,15 @@ export function OverviewView() {
       title="Overview"
       description="Promises about AI purchasing agents, the counterexamples found against them, and what the declared trusted evaluator verified on replay."
       actions={
-        <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
-          Create challenge
-        </ButtonLink>
+        SNAPSHOT_MODE ? (
+          <ButtonLink href="/challenges/new" icon={<FilePlus2 />}>
+            How a challenge is created
+          </ButtonLink>
+        ) : (
+          <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
+            Create challenge
+          </ButtonLink>
+        )
       }
     />
   );
@@ -157,17 +165,27 @@ function OverviewStats({ data }: { data: Overview }) {
         className="col-span-2 lg:col-span-1"
         label="Challenges"
         value={formatNumber(data.challenges)}
-        hint="published on this backend"
+        hint={SNAPSHOT_MODE && SNAPSHOT_MANIFEST
+          ? `included in this recorded snapshot (${SNAPSHOT_MANIFEST.challenges_included.length} of ${SNAPSHOT_MANIFEST.challenges_on_evaluator} on the evaluator)`
+          : "published on this backend"}
       />
       <Stat label="Funded" value={formatNumber(data.funded)} hint="reward escrowed, not yet settled or refunded" />
       <Stat
-        label="Active runs"
+        label={
+          <>
+            Active runs <RecordedMark what="This count" />
+          </>
+        }
         value={formatNumber(data.active_runs)}
         tone={data.active_runs > 0 ? "warn" : undefined}
         hint={
-          data.active_runs > 0
-            ? `${plural(data.active_runs, "search", "searches")} queued or running; refreshing every ${POLL_MS / 1000} s`
-            : "no search queued or running"
+          SNAPSHOT_MODE
+            ? data.active_runs > 0
+              ? `${plural(data.active_runs, "search", "searches")} queued or running when recorded; not refreshing`
+              : "no search queued or running when recorded"
+            : data.active_runs > 0
+              ? `${plural(data.active_runs, "search", "searches")} queued or running; refreshing every ${POLL_MS / 1000} s`
+              : "no search queued or running"
         }
       />
       <Stat
@@ -195,9 +213,15 @@ function FirstChallenge() {
           No challenges yet
         </h2>
         <p className="max-w-3xl text-sm text-muted">{productIntro(config?.network)}</p>
-        <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
-          Create the first challenge
-        </ButtonLink>
+        {SNAPSHOT_MODE ? (
+          <ButtonLink href="/challenges/new" icon={<FilePlus2 />}>
+            How a challenge is created
+          </ButtonLink>
+        ) : (
+          <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
+            Create the first challenge
+          </ButtonLink>
+        )}
       </div>
       <ChallengeLoop className="border-t border-line pt-5" />
     </Card>

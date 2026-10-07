@@ -13,6 +13,7 @@ import { useChallenges, useConfig } from "@/lib/queries";
 import { KNOWN_STATUSES, statusMeta } from "@/lib/status";
 import { ChallengesTable } from "./challenges-table";
 import { ChallengeLoop, productIntro, sortNewest } from "./shared";
+import { SNAPSHOT_MANIFEST, SNAPSHOT_MODE } from "@/lib/snapshot";
 
 type FilterId = "all" | "verified" | "active" | ChallengeStatus;
 
@@ -58,11 +59,19 @@ export function ChallengesListView() {
   const header = (
     <PageHeader
       title="Challenges"
-      description="Every promise published on this backend, newest first. Open one to see its rules, runs, the evaluator's replays, settlement and regression tests."
+      description={SNAPSHOT_MODE && SNAPSHOT_MANIFEST
+        ? `The challenges included in this recorded snapshot (${SNAPSHOT_MANIFEST.challenges_included.length} of ${SNAPSHOT_MANIFEST.challenges_on_evaluator} on the evaluator), newest first. Open one to see its rules, runs, the evaluator's replays, settlement and regression tests as recorded.`
+        : "Every promise published on this backend, newest first. Open one to see its rules, runs, the evaluator's replays, settlement and regression tests."}
       actions={
-        <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
-          Create challenge
-        </ButtonLink>
+        SNAPSHOT_MODE ? (
+          <ButtonLink href="/challenges/new" icon={<FilePlus2 />}>
+            How a challenge is created
+          </ButtonLink>
+        ) : (
+          <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
+            Create challenge
+          </ButtonLink>
+        )
       }
     />
   );
@@ -86,9 +95,15 @@ export function ChallengesListView() {
           title="No challenges yet"
           description={productIntro(config?.network)}
           action={
-            <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
-              Create the first challenge
-            </ButtonLink>
+            SNAPSHOT_MODE ? (
+              <ButtonLink href="/challenges/new" icon={<FilePlus2 />}>
+                How a challenge is created
+              </ButtonLink>
+            ) : (
+              <ButtonLink href="/challenges/new" variant="primary" icon={<FilePlus2 />}>
+                Create the first challenge
+              </ButtonLink>
+            )
           }
         />
         <ChallengeLoop className="mt-6" />

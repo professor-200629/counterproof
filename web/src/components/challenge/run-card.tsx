@@ -15,6 +15,8 @@ import { useCancelRun } from "@/lib/queries";
 import { isRunActive } from "@/lib/status";
 import { Mono } from "@/components/ui/text-link";
 import { Disclosure } from "@/components/ui/disclosure";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 export interface RunCardProps {
   run: RunSummary;
@@ -54,7 +56,7 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
         actions={
           <>
             <StatusBadge status={run.status} domain="run" />
-            {active ? (
+            {active && !SNAPSHOT_MODE ? (
               <Button
                 size="sm"
                 variant="danger"
@@ -71,6 +73,10 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
       />
       <CardBody className="space-y-3">
         <RunProgress status={run.status} record={rec} />
+
+        {active && SNAPSHOT_MODE ? (
+          <ReadOnlyNote action="This run was still active when the snapshot was recorded; its progress above is the last the worker reported, and cancelling it" />
+        ) : null}
 
         {cancel.isError ? <ErrorState error={cancel.error} title="Cancel refused" compact /> : null}
 

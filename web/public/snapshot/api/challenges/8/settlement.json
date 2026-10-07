@@ -1,0 +1,93 @@
+{
+ "challenge": {
+  "id": 8,
+  "spec_digest": "sha256:f70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+  "status": "settled",
+  "network": "anvil-local",
+  "chain_id": 31337,
+  "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "onchain_id": "3",
+  "fund_tx": "0x8eb1a1f3aa20b66e3ee93bc1254337a941dc8506ff56762d60d2ab5f61d84e55",
+  "reward_wei": "10000000000000000",
+  "note": null,
+  "created_at": 1791309024,
+  "updated_at": 1791309030
+ },
+ "attestation": {
+  "typed_data": {
+   "domain": {
+    "name": "CounterProof",
+    "version": "1",
+    "chainId": 31337,
+    "verifyingContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+   },
+   "types": {
+    "Attestation": [
+     {
+      "name": "challengeId",
+      "type": "uint256"
+     },
+     {
+      "name": "specDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "submissionId",
+      "type": "bytes32"
+     },
+     {
+      "name": "candidateDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "evidenceDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "challenger",
+      "type": "address"
+     },
+     {
+      "name": "recipient",
+      "type": "address"
+     },
+     {
+      "name": "verdict",
+      "type": "uint8"
+     },
+     {
+      "name": "expiry",
+      "type": "uint64"
+     }
+    ]
+   },
+   "primaryType": "Attestation",
+   "message": {
+    "challengeId": 3,
+    "specDigest": "0xf70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+    "submissionId": "0xe1a136b8546605cd31f57415db23891edf64fe37eadfed77416d32d860c37cc2",
+    "candidateDigest": "0x4cfa977df26ff125fc9d3bf2b25ccae910c9310046b14a607e74192021bed4b3",
+    "evidenceDigest": "0x09cdd607bf34ae7799c7d4fc273533a12b2e29eab39ad1a29bb36858b9ee013c",
+    "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "verdict": 1,
+    "expiry": 1791312624
+   }
+  },
+  "signature": "0xfdd55c7464efbbcba1f9162a3c1d03685450c510e9f58342de6f0c8d3f359c5506f76caf405ca323706d7a330c5e7b4e1dda28f7f5e65fc3bdd37c1b27f01a671c",
+  "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "expiry": 1791312624,
+  "evaluation_id": "eval_eef3493dc0864883"
+ },
+ "onchain": {
+  "publisher": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "evaluator": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "submission_deadline": 1791310824,
+  "settlement_deadline": 1791312624,
+  "status": "settled",
+  "reward_wei": "10000000000000000",
+  "spec_digest": "sha256:f70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+  "settled_submission": "0xe1a136b8546605cd31f57415db23891edf64fe37eadfed77416d32d860c37cc2"
+ },
+ "explorer_template": null
+}

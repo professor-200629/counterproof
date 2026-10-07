@@ -1,5 +1,6 @@
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 export default function NotFound() {
   return (
@@ -7,7 +8,9 @@ export default function NotFound() {
       <h1 className="text-xl font-semibold tracking-tight text-fg">Page not found</h1>
       <EmptyState
         title="There is nothing at this address."
-        description="The link may be wrong, or the challenge, evaluation or evidence it pointed to does not exist on this backend."
+        description={SNAPSHOT_MODE
+          ? "The link may be wrong, or the challenge, evaluation or evidence it pointed to is not included in this recorded snapshot."
+          : "The link may be wrong, or the challenge, evaluation or evidence it pointed to does not exist on this backend."}
         action={
           <>
             <ButtonLink href="/challenges" variant="primary">

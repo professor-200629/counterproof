@@ -21,6 +21,7 @@ import { DateTime } from "@/components/ui/time";
 import { toneSurface, type Tone } from "@/components/ui/tone";
 import {
   evidenceDownloadUrl,
+  evidenceFilename,
   specJsonUrl,
   type AppConfig,
   type ChallengeSpec,
@@ -44,6 +45,8 @@ import { MatchMark } from "@/components/ui/match-mark";
 import { VerdictBadge, VerdictBanner } from "./verdict";
 import { WhoChecked } from "./who-checked";
 import { useSignatureBinding, type SignatureBinding } from "@/components/settlement/use-recovered-signer";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 const NAV = [
   ["answers", "At a glance"],
@@ -128,7 +131,7 @@ export function EvidenceViewer({ id }: { id: string }) {
         actions={
           <>
             {digest ? (
-              <ButtonLink href={evidenceDownloadUrl(digest)} external download variant="primary" icon={<Download />}>
+              <ButtonLink href={evidenceDownloadUrl(digest)} external download={evidenceFilename(digest)} variant="primary" icon={<Download />}>
                 Download evidence bundle
               </ButtonLink>
             ) : null}
@@ -177,7 +180,9 @@ function PendingEvaluation({ evaluation, spec }: { evaluation: Evaluation; spec:
       <Callout tone="warn" role="status" title={`Independent replay ${evaluation.status === "queued" ? "queued" : "in progress"}`}>
         <p>
           {statusMeta(evaluation.status, "evaluation").description} The evaluator reports no partial progress, so none is shown;
-          this page refreshes every few seconds and the verdict appears when the replay finishes.
+          {SNAPSHOT_MODE
+            ? " this replay had not finished when the snapshot was recorded, and this recording does not update."
+            : " this page refreshes every few seconds and the verdict appears when the replay finishes."}
         </p>
         <JobFacts job={job} requestedAt={evaluation.created_at} requestedLabel="Submitted" className="mt-2" />
       </Callout>
@@ -299,11 +304,15 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
       {evaluation.outcome === "runner_failure" ? (
         <Callout tone="warn" title="Runner failure - no verdict about the agent">
           <p>The evaluator&apos;s own runner failed, so this says nothing about the agent. The backend allows a runner failure to be retried; every other verdict is final.</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button icon={<RotateCcw />} busy={retry.isPending} busyLabel="Re-queuing..." onClick={() => retry.mutate(evaluation.id)}>
-              Retry the replay
-            </Button>
-          </div>
+          {SNAPSHOT_MODE ? (
+            <ReadOnlyNote action="Retrying the replay" className="mt-2" />
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button icon={<RotateCcw />} busy={retry.isPending} busyLabel="Re-queuing..." onClick={() => retry.mutate(evaluation.id)}>
+                Retry the replay
+              </Button>
+            </div>
+          )}
           {retry.isError ? <ErrorState error={retry.error} title="Retry refused" compact className="mt-2" /> : null}
         </Callout>
       ) : null}
@@ -525,7 +534,7 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
                   </p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     {evidenceDigest ? (
-                      <ButtonLink href={evidenceDownloadUrl(evidenceDigest)} external download size="sm" icon={<Download />}>
+                      <ButtonLink href={evidenceDownloadUrl(evidenceDigest)} external download={evidenceFilename(evidenceDigest)} size="sm" icon={<Download />}>
                         Evidence bundle (JSON)
                       </ButtonLink>
                     ) : null}

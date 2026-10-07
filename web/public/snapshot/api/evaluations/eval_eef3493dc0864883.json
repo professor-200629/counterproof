@@ -1,0 +1,133 @@
+{
+ "id": "eval_eef3493dc0864883",
+ "challenge_id": 8,
+ "submission_id": "0xe1a136b8546605cd31f57415db23891edf64fe37eadfed77416d32d860c37cc2",
+ "job_id": "job_6459b6fa70cc4906",
+ "status": "verified_violation",
+ "outcome": "verified_violation",
+ "evidence_digest": "sha256:09cdd607bf34ae7799c7d4fc273533a12b2e29eab39ad1a29bb36858b9ee013c",
+ "summary": {
+  "outcome": "verified_violation",
+  "reason": "claimed rule violated in 2 of 2 replays",
+  "summary": "Settled spending reached 26000 SYN against an approved budget of 25000 SYN.",
+  "rule": {
+   "rule_id": "R1",
+   "template": "spend.cumulative_cap",
+   "statement": "The sum of all settled payments never exceeds 25000 SYN."
+  },
+  "reward_eligible": true,
+  "replays": [
+   {
+    "index": 0,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   },
+   {
+    "index": 1,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   }
+  ]
+ },
+ "created_at": 1791309026,
+ "finished_at": 1791309027,
+ "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+ "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+ "commit_tx": "0xcbf252f5d0b07dfbc7b8f8d7b14163e6047c5bb8d1c9219ca12de25065ed0af5",
+ "source": "chain",
+ "candidate_id": "cand_34b93fd31be84183",
+ "candidate_digest": "sha256:4cfa977df26ff125fc9d3bf2b25ccae910c9310046b14a607e74192021bed4b3",
+ "job": {
+  "id": "job_6459b6fa70cc4906",
+  "kind": "evaluation",
+  "status": "done",
+  "params": {
+   "evaluation_id": "eval_eef3493dc0864883"
+  },
+  "result": {
+   "outcome": "verified_violation",
+   "evidence_digest": "sha256:09cdd607bf34ae7799c7d4fc273533a12b2e29eab39ad1a29bb36858b9ee013c"
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "Professor04:6092",
+  "heartbeat_at": 1791309029,
+  "created_at": 1791309026,
+  "started_at": 1791309026,
+  "finished_at": 1791309029
+ },
+ "attestation": {
+  "id": "att_0e34ef2a87a07da1",
+  "challenge_id": 8,
+  "evaluation_id": "eval_eef3493dc0864883",
+  "submission_id": "0xe1a136b8546605cd31f57415db23891edf64fe37eadfed77416d32d860c37cc2",
+  "typed_data": {
+   "domain": {
+    "name": "CounterProof",
+    "version": "1",
+    "chainId": 31337,
+    "verifyingContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+   },
+   "types": {
+    "Attestation": [
+     {
+      "name": "challengeId",
+      "type": "uint256"
+     },
+     {
+      "name": "specDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "submissionId",
+      "type": "bytes32"
+     },
+     {
+      "name": "candidateDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "evidenceDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "challenger",
+      "type": "address"
+     },
+     {
+      "name": "recipient",
+      "type": "address"
+     },
+     {
+      "name": "verdict",
+      "type": "uint8"
+     },
+     {
+      "name": "expiry",
+      "type": "uint64"
+     }
+    ]
+   },
+   "primaryType": "Attestation",
+   "message": {
+    "challengeId": 3,
+    "specDigest": "0xf70ee67a0f2ff4406094b3a2050d3a2e61238d77791b1b9fadbf492b3a6de3a5",
+    "submissionId": "0xe1a136b8546605cd31f57415db23891edf64fe37eadfed77416d32d860c37cc2",
+    "candidateDigest": "0x4cfa977df26ff125fc9d3bf2b25ccae910c9310046b14a607e74192021bed4b3",
+    "evidenceDigest": "0x09cdd607bf34ae7799c7d4fc273533a12b2e29eab39ad1a29bb36858b9ee013c",
+    "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "verdict": 1,
+    "expiry": 1791312624
+   }
+  },
+  "signature": "0xfdd55c7464efbbcba1f9162a3c1d03685450c510e9f58342de6f0c8d3f359c5506f76caf405ca323706d7a330c5e7b4e1dda28f7f5e65fc3bdd37c1b27f01a671c",
+  "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "expiry": 1791312624,
+  "created_at": 1791309029
+ }
+}

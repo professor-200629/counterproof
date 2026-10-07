@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { cn } from "@/lib/cn";
 import { formatCountdown, formatRelative, formatUnix, toIso } from "@/lib/format";
+import { SNAPSHOT_MODE, SNAPSHOT_TAKEN_AT, deadlineAtSnapshot } from "@/lib/snapshot";
 
 // A shared clock per tick interval. getSnapshot returns a cached number (required by
 // useSyncExternalStore); the server snapshot is null so SSR and hydration render the
@@ -50,9 +51,17 @@ function storeFor(intervalMs: number) {
 }
 const serverSnapshot = () => null;
 
-/** Current time in ms, re-rendering every `intervalMs`. Null during SSR / hydration. */
+// Snapshot mode: the clock stands still at the moment the recording was made, so every
+// "has the deadline passed / is it expired" judgement describes the recorded state.
+const SNAPSHOT_NOW_MS = SNAPSHOT_TAKEN_AT === null ? null : SNAPSHOT_TAKEN_AT * 1000;
+const frozenStore = { sub: () => () => {}, snap: () => SNAPSHOT_NOW_MS as number };
+
+/**
+ * Current time in ms, re-rendering every `intervalMs`. Null during SSR / hydration. In
+ * snapshot mode it is the time the snapshot was taken and never ticks.
+ */
 export function useNow(intervalMs = 1000): number | null {
-  const s = storeFor(intervalMs);
+  const s = SNAPSHOT_NOW_MS === null ? storeFor(intervalMs) : frozenStore;
   return useSyncExternalStore(s.sub, s.snap, serverSnapshot);
 }
 
@@ -63,13 +72,16 @@ export interface TimeProps {
   emptyText?: string;
 }
 
-/** "3 min ago" / "in 5 min" with the absolute time in a tooltip. */
+/**
+ * "3 min ago" / "in 5 min" with the absolute time in a tooltip. In snapshot mode the
+ * absolute time instead: "ago" would be measured from a moment the visitor cannot see.
+ */
 export function TimeAgo({ ts, className, emptyText = "n/a" }: TimeProps) {
   const now = useNow(15_000);
   if (typeof ts !== "number") return <span className={cn("text-subtle", className)}>{emptyText}</span>;
   return (
     <time dateTime={toIso(ts)} title={formatUnix(ts, { utc: true, seconds: true })} className={cn("tabular", className)}>
-      {now === null ? formatUnix(ts, { utc: true }) : formatRelative(ts, now)}
+      {now === null ? formatUnix(ts, { utc: true }) : SNAPSHOT_MODE ? formatUnix(ts) : formatRelative(ts, now)}
     </time>
   );
 }
@@ -97,12 +109,20 @@ export interface CountdownProps {
 
 /**
  * Live countdown to a unix-seconds deadline. Uses amber below one hour and a neutral
- * "passed" state afterwards. The exact deadline is in the tooltip.
+ * "passed" state afterwards. The exact deadline is in the tooltip. In snapshot mode it does
+ * not count: it says whether the deadline had passed when the snapshot was taken.
  */
 export function Countdown({ to, expiredText, className, prefix }: CountdownProps) {
   const now = useNow(1000);
   if (typeof to !== "number") return <span className={cn("text-subtle", className)}>n/a</span>;
   const exact = formatUnix(to, { utc: true, seconds: true });
+  if (SNAPSHOT_MODE) {
+    return (
+      <time dateTime={toIso(to)} title={`${exact} - recorded, not counting down`} className={cn("tabular text-muted", className)}>
+        {deadlineAtSnapshot(to)}
+      </time>
+    );
+  }
   if (now === null) {
     return (
       <time dateTime={toIso(to)} title={exact} className={cn("tabular", className)}>

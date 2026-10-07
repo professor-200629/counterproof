@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/shell/app-shell";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import "./globals.css";
 
 const inter = Inter({
@@ -19,10 +20,11 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "CounterProof",
-    template: "%s - CounterProof",
+    default: SNAPSHOT_MODE ? "CounterProof (recorded snapshot)" : "CounterProof",
+    template: SNAPSHOT_MODE ? "%s - CounterProof (recorded snapshot)" : "%s - CounterProof",
   },
   description:
+    (SNAPSHOT_MODE ? "Read-only recorded snapshot: " : "") +
     "Put AI promises to the test: measurable promises about an AI purchasing agent, counterexamples replayed by a declared trusted evaluator, optional rewards settled on chain.",
 };
 

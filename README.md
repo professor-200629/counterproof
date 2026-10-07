@@ -107,6 +107,40 @@ generator, set `COUNTERPROOF_LLM_PROVIDER` (`groq`, `openai` or `openrouter`), t
 provider's API key and optionally `COUNTERPROOF_LLM_MODEL` in `.env`. Missing credentials
 produce an explicit error; a failed live run is never replaced with fixture results.
 
+## Hosted snapshot
+
+For people who cannot run the evaluator, the console can be published as a **read-only
+recorded snapshot** (e.g. on Vercel). It is a recording, not a deployment of CounterProof:
+the API, worker, signer and chain run only on the owner's machine, and nothing on the
+hosted site runs live. The replays, verdicts, signatures and transactions it shows were
+recorded from the evaluator's run; a banner on every page says when the snapshot was
+taken, from which network, and how many challenges it includes. Every action (create,
+fund, run, cancel, submit, retry, attest, settle, withdraw, refund, regression) is replaced
+by a note pointing here, the wallet button is gone, deadlines are judged at snapshot time
+instead of counting down, and downloads (evidence bundles, spec JSON, regression tests)
+are the recorded files. The browser reads nothing from a local anvil chain; only for a
+Monad testnet snapshot does it read `credits()` live from the public RPC, labelled as such.
+
+How it is produced:
+
+```bash
+# 1. with the evaluator running (scripts/dev.py local | testnet) and the flow done:
+backend/.venv/Scripts/python scripts/export_snapshot.py [--api http://127.0.0.1:8010] [--challenges 3]
+#    -> web/public/snapshot/ (every GET the console needs + manifest.json); refuses to
+#       export any response containing a secret value from .env
+# 2. preview locally
+cd web && NEXT_PUBLIC_SNAPSHOT=1 pnpm build && pnpm start
+```
+
+3. Deploy `web/` to Vercel (project root directory `web`) with the build-time environment
+   variable `NEXT_PUBLIC_SNAPSHOT=1` and no `BACKEND_URL`. Vercel builds from the
+   repository, so commit `web/public/snapshot/` first (or deploy from the CLI). A snapshot
+   build without `public/snapshot/manifest.json` fails on purpose.
+4. Set `SNAPSHOT_SOURCE_URL` in `web/src/lib/snapshot.ts` to this repository's URL; the
+   banner's "How to run it yourself" link and every read-only note point there.
+
+Details: [web/FRONTEND_NOTES.md](web/FRONTEND_NOTES.md), section "Snapshot mode".
+
 ## Documents
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — components, data flow, trust boundaries

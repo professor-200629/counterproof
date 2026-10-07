@@ -8,7 +8,13 @@
  * Types are derived from real backend responses (see FRONTEND_NOTES.md). Fields the
  * backend only sometimes sends are optional; JSON blobs whose shape depends on the rule
  * or strategy are typed as `JsonObject`.
+ *
+ * Snapshot mode (NEXT_PUBLIC_SNAPSHOT=1, see lib/snapshot.ts): every GET reads the recorded
+ * response under /snapshot instead, a missing file is a 404 "not included in this recorded
+ * snapshot", and every mutation throws a read-only ApiError without any request.
  */
+
+import { NOT_IN_SNAPSHOT, READ_ONLY_DETAIL, READ_ONLY_KIND, SNAPSHOT_MODE, snapshotFile } from "./snapshot";
 
 // ---------------------------------------------------------------------------- primitives
 export type Hex = `0x${string}`;
@@ -893,6 +899,7 @@ export interface RequestOptions {
 
 /** Low-level request. Throws ApiError with the backend's `detail` on any non-2xx. */
 export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  if (SNAPSHOT_MODE) return snapshotRequest<T>(path, opts);
   const fullPath = withQuery(path, opts.query);
   const url = `${apiBase()}/api${fullPath}`;
   let res: Response;
@@ -936,6 +943,42 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     });
   }
   return parsed as T;
+}
+
+/**
+ * Snapshot mode: a GET reads the recorded response from its static file (lib/snapshot.ts);
+ * anything else throws the read-only error before any request is made.
+ */
+async function snapshotRequest<T>(path: string, opts: RequestOptions): Promise<T> {
+  const fullPath = withQuery(path, opts.query);
+  const method = opts.method ?? (opts.body === undefined ? "GET" : "POST");
+  if (method !== "GET") {
+    throw new ApiError({ status: 405, detail: READ_ONLY_DETAIL, kind: READ_ONLY_KIND, path: fullPath });
+  }
+  const file = snapshotFile(`/api${fullPath}`);
+  let res: Response;
+  try {
+    res = await fetch(file, { headers: { Accept: "application/json, text/plain" }, signal: opts.signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new ApiError({
+      status: 0,
+      detail: `Could not load the recorded snapshot file ${file} (${e instanceof Error ? e.message : String(e)}).`,
+      path: fullPath,
+    });
+  }
+  if (res.status === 404) {
+    throw new ApiError({ status: 404, detail: `/api${fullPath} is ${NOT_IN_SNAPSHOT}.`, path: fullPath });
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    throw new ApiError({ status: res.status, detail: `Could not load the recorded snapshot file ${file} (HTTP ${res.status}).`, path: fullPath });
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as T;
+  }
 }
 
 const enc = encodeURIComponent;
@@ -998,17 +1041,33 @@ export const api = {
   getRegressionExport: (regressionId: string) => apiRequest<RegressionExport>(`/regressions/${enc(regressionId)}/export`),
 } as const;
 
-/** The content-addressed spec as JSON (rules, parameters, initial state, target): GET /api/specs/{digest}. */
-export function specJsonUrl(digest: Digest): string {
-  return apiUrl(`/specs/${enc(digest)}`);
+/** A download link for an API path: the API itself, or the recorded static file in snapshot mode. */
+function downloadUrl(path: string): string {
+  return SNAPSHOT_MODE ? snapshotFile(apiUrl(path)) : apiUrl(path);
 }
 
-/** Link that downloads the evidence bundle as a JSON file. */
+/** The content-addressed spec as JSON (rules, parameters, initial state, target): GET /api/specs/{digest}. */
+export function specJsonUrl(digest: Digest): string {
+  return downloadUrl(`/specs/${enc(digest)}`);
+}
+
+/** Link that downloads the evidence bundle as a JSON file. Render it with a `download` attribute. */
 export function evidenceDownloadUrl(digest: Digest): string {
-  return apiUrl(`/evidence/${enc(digest)}?download=true`);
+  return downloadUrl(`/evidence/${enc(digest)}?download=true`);
 }
 
 /** Link that downloads a regression test: JSON fixture or a generated pytest file. */
 export function regressionExportUrl(regressionId: string, format: "json" | "pytest" = "json"): string {
-  return apiUrl(`/regressions/${enc(regressionId)}/export${format === "pytest" ? "?format=pytest" : ""}`);
+  return downloadUrl(`/regressions/${enc(regressionId)}/export${format === "pytest" ? "?format=pytest" : ""}`);
+}
+
+/** File name for a downloaded regression test (the `download` attribute; static snapshot files have no Content-Disposition). */
+export function regressionExportFilename(regressionId: string, format: "json" | "pytest" = "json"): string {
+  const safe = regressionId.replace(/[^A-Za-z0-9_.-]/g, "_");
+  return format === "pytest" ? `test_regression_${safe}.py` : `regression_${safe}.json`;
+}
+
+/** File name for a downloaded evidence bundle. */
+export function evidenceFilename(digest: Digest): string {
+  return `evidence-${digest.replace(/^sha256:/, "").slice(0, 12)}.json`;
 }

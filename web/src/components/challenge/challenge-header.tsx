@@ -16,6 +16,7 @@ import { Countdown, DateTime, TimeAgo } from "@/components/ui/time";
 import type { ChallengeView } from "@/lib/api";
 import { formatWei, txNetworkPhrase } from "@/lib/chain";
 import { TextLink } from "@/components/ui/text-link";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -59,7 +60,7 @@ export function ChallengeHeader({ view, now }: { view: ChallengeView; now: numbe
               Settlement
             </ButtonLink>
             <ButtonLink href={`/challenges/${view.id}/compare`} icon={<GitCompare />}>
-              Repair and regression
+              {SNAPSHOT_MODE ? "Before / after (recorded)" : "Repair and regression"}
             </ButtonLink>
           </>
         }

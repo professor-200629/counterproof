@@ -14,7 +14,12 @@ import type { AppConfig, ComponentInfo, IsolationBackend } from "@/lib/api";
 import { MONADSCAN_TX_BASE } from "@/lib/chain";
 import { formatNumber, sameHex } from "@/lib/format";
 import { useConfig } from "@/lib/queries";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { RecordedMark } from "@/components/snapshot";
 import { Facts, Indicator } from "./shared";
+
+/** " at snapshot time" after a reachability word in the recorded build. */
+const AT = SNAPSHOT_MODE ? " at snapshot time" : "";
 
 /**
  * "Environment and trust": what GET /api/config says about this backend - network and
@@ -29,7 +34,12 @@ export function EnvironmentPanel({ headingId = "environment-heading" }: { headin
         id={headingId}
         level={2}
         title="Environment and trust"
-        description="As reported by this backend (GET /api/config). Keys are never shown, only whether one is present."
+        description={
+          SNAPSHOT_MODE
+            ? "As the evaluator's backend reported it when this snapshot was taken (GET /api/config, recorded). Reachability below is from that moment, not checked now. Keys are never shown, only whether one is present."
+            : "As reported by this backend (GET /api/config). Keys are never shown, only whether one is present."
+        }
+        actions={<RecordedMark what="This configuration" />}
       />
       <CardBody>
         {q.data ? (
@@ -130,10 +140,10 @@ function ChainFacts({ config }: { config: AppConfig }) {
               <span className="flex flex-col items-start gap-1">
                 {c.reachable ? (
                   <Indicator tone="ok">
-                    Reachable{typeof c.block === "number" ? `, block ${formatNumber(c.block)}` : ""}
+                    Reachable{AT}{typeof c.block === "number" ? `, block ${formatNumber(c.block)}` : ""}
                   </Indicator>
                 ) : (
-                  <Indicator tone="warn">Unreachable</Indicator>
+                  <Indicator tone="warn">Unreachable{AT}</Indicator>
                 )}
                 {c.rpc ? <span className="break-all font-mono text-xs text-muted">{c.rpc}</span> : null}
                 {c.error ? <span className="text-xs text-muted">Backend says: {c.error}</span> : null}
@@ -212,11 +222,11 @@ function EvaluatorFacts({ config }: { config: AppConfig }) {
       value: (
         <span className="flex flex-col items-start gap-1">
           {s.reachable ? (
-            <Indicator tone="ok">Reachable</Indicator>
+            <Indicator tone="ok">Reachable{AT}</Indicator>
           ) : offchain ? (
             <Indicator tone="neutral">Not reachable - not needed off-chain</Indicator>
           ) : (
-            <Indicator tone="warn">Unreachable - attestations cannot be signed</Indicator>
+            <Indicator tone="warn">Unreachable{AT} - attestations cannot be signed</Indicator>
           )}
           {s.reachable && s.configured === true ? <Indicator tone="ok">Signing key configured</Indicator> : null}
           {s.reachable && s.configured === false ? <Indicator tone="warn">No signing key configured</Indicator> : null}
@@ -279,7 +289,10 @@ function IsolationFacts({ config }: { config: AppConfig }) {
           <li key={name} className="space-y-1 px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="text-sm font-medium text-fg">{ISOLATION_NAMES[name] ?? name}</span>
-              <Indicator tone={b.available ? "ok" : "warn"}>{b.available ? "Available" : "Unavailable"}</Indicator>
+              <Indicator tone={b.available ? "ok" : "warn"}>
+                {b.available ? "Available" : "Unavailable"}
+                {AT}
+              </Indicator>
               {name === config.default_isolation ? (
                 <Badge tone="neutral" size="sm">
                   Default for new challenges

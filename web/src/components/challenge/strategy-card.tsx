@@ -12,6 +12,7 @@ import type { AppConfig, SpecRule, Strategy } from "@/lib/api";
 import { useStartRun } from "@/lib/queries";
 import { DataPairs } from "@/components/evidence/values";
 import { Mono } from "@/components/ui/text-link";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /**
  * Budget the form starts with. These mirror the defaults the backend applies when no
@@ -108,7 +109,9 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
           </div>
         ) : null}
 
-        {isModel ? (
+        {isModel && SNAPSHOT_MODE ? (
+          <TrustStatement kind="llm" />
+        ) : isModel ? (
           <div className="space-y-2 rounded-md border border-line bg-inset p-3">
             {providers.length === 0 ? (
               <p className="text-sm text-warn">The backend reports no model providers.</p>
@@ -136,47 +139,52 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
           </div>
         ) : null}
 
-        <fieldset className="grid grid-cols-2 gap-3">
-          <legend className="mb-1.5 text-sm font-medium text-fg">Search budget</legend>
-          <NumberField
-            label="Max sequences"
-            id={`${baseId}-seq`}
-            value={maxSeq}
-            onChange={setMaxSeq}
-            min={1}
-            max={100000}
-            unit="seq"
-          />
-          <NumberField
-            label="Max wall time"
-            id={`${baseId}-wall`}
-            value={maxWall}
-            onChange={setMaxWall}
-            min={1}
-            max={86400}
-            unit="s"
-          />
-        </fieldset>
+        {SNAPSHOT_MODE ? null : (
+          <fieldset className="grid grid-cols-2 gap-3">
+            <legend className="mb-1.5 text-sm font-medium text-fg">Search budget</legend>
+            <NumberField
+              label="Max sequences"
+              id={`${baseId}-seq`}
+              value={maxSeq}
+              onChange={setMaxSeq}
+              min={1}
+              max={100000}
+              unit="seq"
+            />
+            <NumberField
+              label="Max wall time"
+              id={`${baseId}-wall`}
+              value={maxWall}
+              onChange={setMaxWall}
+              min={1}
+              max={86400}
+              unit="s"
+            />
+          </fieldset>
+        )}
       </CardBody>
-      <div className="space-y-2 border-t border-line px-4 py-3 sm:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" icon={<Play />} disabled={disabled} busy={start.isPending} busyLabel="Queuing..." onClick={run}>
-            Run {strategy.title.toLowerCase()}
-          </Button>
-          {blockedReason ? <span className="text-xs text-muted">{blockedReason}</span> : null}
-          {!blockedReason && budgetMissing ? <span className="text-xs text-warn">Enter a valid budget.</span> : null}
+      {/* Snapshot mode: no budget form and no Run button; the tab says once why. */}
+      {SNAPSHOT_MODE ? null : (
+        <div className="space-y-2 border-t border-line px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" icon={<Play />} disabled={disabled} busy={start.isPending} busyLabel="Queuing..." onClick={run}>
+              Run {strategy.title.toLowerCase()}
+            </Button>
+            {blockedReason ? <span className="text-xs text-muted">{blockedReason}</span> : null}
+            {!blockedReason && budgetMissing ? <span className="text-xs text-warn">Enter a valid budget.</span> : null}
+          </div>
+          {start.isError ? <ErrorState error={start.error} title="The backend refused this run" compact /> : null}
+          {start.isSuccess && start.data ? (
+            <p role="status" className="text-xs text-muted">
+              Queued run <span className="font-mono text-fg">{start.data.id}</span> with budget{" "}
+              <span className="tabular">
+                {start.data.budget.max_sequences} sequences / {start.data.budget.max_wall_seconds} s
+              </span>
+              . It appears in the run list below.
+            </p>
+          ) : null}
         </div>
-        {start.isError ? <ErrorState error={start.error} title="The backend refused this run" compact /> : null}
-        {start.isSuccess && start.data ? (
-          <p role="status" className="text-xs text-muted">
-            Queued run <span className="font-mono text-fg">{start.data.id}</span> with budget{" "}
-            <span className="tabular">
-              {start.data.budget.max_sequences} sequences / {start.data.budget.max_wall_seconds} s
-            </span>
-            . It appears in the run list below.
-          </p>
-        ) : null}
-      </div>
+      )}
     </Card>
   );
 }

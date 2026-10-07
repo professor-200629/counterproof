@@ -65,9 +65,11 @@ every view in its loading / error / not-found / empty / data state from real API
 `next.config.ts` rewrites `/api/:path*` -> `${BACKEND_URL}/api/:path*` (default
 `http://127.0.0.1:8010`). The browser only ever calls same-origin `/api`. Rewrites are
 resolved when `next build` / `next dev` starts, so set `BACKEND_URL` before building.
+In snapshot mode (section 12) there is no rewrite and no backend.
 
 Env: `BACKEND_URL` (server), `NEXT_PUBLIC_DEV_WALLET=1` (adds the anvil mock connector),
-`NEXT_PUBLIC_ANVIL_RPC_URL` (optional, default `http://127.0.0.1:8545`).
+`NEXT_PUBLIC_ANVIL_RPC_URL` (optional, default `http://127.0.0.1:8545`),
+`NEXT_PUBLIC_SNAPSHOT=1` (read-only recorded snapshot, section 12).
 
 ## 2. Theme tokens (`src/app/globals.css`)
 
@@ -400,4 +402,49 @@ helper tests next to their pages (`create`, `settlement`, `compare`), and `src/l
 confirmed, stale / foreign receipts, retry, rejection detection, error reasons) and
 `src/lib/__tests__/lib.test.ts` (digest <-> bytes32, explorer links only on MonadScan,
 anvil never labelled Monad, MON parsing/formatting, createChallenge args, status coverage of
-every documented status, FastAPI detail normalisation, formatting helpers).
+every documented status, FastAPI detail normalisation, formatting helpers). Snapshot mode
+has its own two test files (section 12).
+
+## 12. Snapshot mode (hosted, read-only)
+
+`NEXT_PUBLIC_SNAPSHOT=1` at **build time** turns the console into a read-only recording for
+public hosting (Vercel). The evaluator (API, worker, signer, chain) runs only on the owner's
+machine; the hosted site must never look as if it runs anything. Normal mode is unchanged.
+
+Data: `scripts/export_snapshot.py` writes every GET response the console needs to
+`public/snapshot/`, plus `public/snapshot/manifest.json` (`format`, `taken_at` unix s,
+`network`, `network_label`, `chain_id`, `contract`, `explorer_tx_url`,
+`challenges_included[]`, `challenges_on_evaluator`, `files`, `note`). Path rule (shared with
+the script, `snapshotFile()` in `lib/snapshot.ts`): `/api/evidence/sha256:ab12` ->
+`/snapshot/api/evidence/sha256_ab12.json` (every `:` -> `_`, append `.json`);
+`/api/regressions/{id}/export?format=pytest` -> `/snapshot/api/regressions/{id}/export.pytest.txt`.
+
+Where it is implemented:
+
+| Piece | File | Behaviour in snapshot mode |
+| --- | --- | --- |
+| Mode + manifest | `lib/snapshot.ts` | `SNAPSHOT_MODE`, `SNAPSHOT_MANIFEST`, `SNAPSHOT_TAKEN_AT`, `SNAPSHOT_SOURCE_URL` (the one place for the repo URL), `snapshotFile`, `snapshotBannerText`, `deadlineAtSnapshot`, `READ_ONLY_DETAIL`, `NOT_IN_SNAPSHOT` |
+| Build | `next.config.ts` | no `/api` rewrite; inlines `public/snapshot/manifest.json` as `NEXT_PUBLIC_SNAPSHOT_MANIFEST`; **fails the build** when it is missing or malformed |
+| Transport | `lib/api.ts` | every GET fetches `snapshotFile("/api" + path)`; 404 -> `ApiError(404, "... not included in this recorded snapshot")`; every POST throws `ApiError(405, READ_ONLY_DETAIL, kind "read_only_snapshot")` with no request; `evidenceDownloadUrl` / `specJsonUrl` / `regressionExportUrl` return the static files (links carry `download`, with `evidenceFilename` / `regressionExportFilename`) |
+| Polling | `lib/queries.ts` | `pollWhile` / `pollIf` return `false`; `staleTime: Infinity`, no refetch on focus / reconnect |
+| Clock | `components/ui/time.tsx`, `overview/deadline.tsx` | `useNow()` is frozen at `taken_at` (state such as "submissions closed" or "attestation expired" is judged at snapshot time); `Countdown` / `Deadline` never count: "passed at snapshot time" / "not passed at snapshot time (1 h 00 min 00 s left then)"; `TimeAgo` shows the absolute time |
+| Shell | `shell/app-shell.tsx`, `shell/snapshot-banner.tsx`, `shell/network-badge.tsx` | non-dismissable banner above every page ("Recorded snapshot - read-only. Taken <UTC> from the CounterProof evaluator on <network_label>. Nothing on this site runs live: ... <N> of <M> challenges included." + "How to run it yourself"), a "Recorded snapshot - read-only" badge in the sticky top bar, no wallet button or notices, the network badge shows the recorded network (`networkLabel(manifest.network)`) and no live RPC health; wagmi never reconnects and the dev-account connector is off |
+| Not found | `ui/states.tsx` | a 404 reads "This <thing> is not included in this recorded snapshot" (not "does not exist"); load failures say "Recorded snapshot file could not be loaded" |
+| Actions | `components/snapshot.tsx` `ReadOnlyNote({ action })` | replaces each control (strategy Run + budget form, Cancel run, Submit candidate, Retry replay, Request / Ask for attestation, Fund, Relay settle, Withdraw, Refund, Start regression) with an inline note and the README link; never a disabled button that looks clickable |
+| Create | `app/challenges/new/page.tsx` -> `create/snapshot-create.tsx` | the five wizard steps (`create/steps.ts`) explained read-only, README link; no wizard (its first step needs `POST /api/specs/preview`) |
+| Recorded marks | `RecordedMark` in `components/snapshot.tsx` | next to values that could pass for live: Active runs, environment reachability ("Reachable at snapshot time"), contract values and status on the settlement page; texts such as "queued or running when recorded" |
+| Chain reads | `settlement/actions.tsx` `canReadChainLive(network)` | the only browser-side contract read is `credits()`; in snapshot mode it runs only when the recorded network is `monad-testnet` (public RPC, chain 10143) and is labelled "read live from the contract on Monad testnet"; on anvil it is not attempted: "local anvil chain - not reachable from this hosted snapshot; values below are as recorded". Signature recovery (`recoverTypedDataAddress`) still runs in the browser: it is local arithmetic, not a chain read |
+
+Rules for new code: read data only through `lib/api.ts` (so the snapshot mapping applies);
+gate every new mutation control on `SNAPSHOT_MODE` and render `ReadOnlyNote` instead; never
+poll outside `pollWhile` / `pollIf`; do not add a chain read that runs in snapshot mode on a
+non-Monad network.
+
+Build and preview: `NEXT_PUBLIC_SNAPSHOT=1 pnpm build && pnpm start` (bash). On Vercel: root
+directory `web`, env `NEXT_PUBLIC_SNAPSHOT=1`, no `BACKEND_URL`; `public/snapshot/` must be in
+the deployed tree. Tests: `src/lib/__tests__/snapshot.test.ts` (path mapping incl. `:` -> `_`,
+GETs read static files, missing file -> 404 wording, every mutation throws the read-only error
+without a request, download URLs, no polling, banner text with `taken_at` and network label,
+every file of the sample snapshot reachable by the mapping) and `src/test/snapshot-mode.test.ts`
+(views rendered from `public/snapshot` with the mode on: banner, no wallet, no action buttons,
+no live anvil read, static download links, the create explainer, the not-included 404).

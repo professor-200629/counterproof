@@ -7,6 +7,7 @@ import { MONAD_RESERVE_HINT, RECEIPT_MEANING, txNetworkPhrase } from "@/lib/chai
 import { cn } from "@/lib/cn";
 import type { BackendReport } from "@/lib/tx";
 import type { TxState } from "@/lib/tx-machine";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 export interface TxStatusProps {
   /** From useTrackedTx: you can spread the hook result `<TxStatus {...tx} label="Funding" />`. */
@@ -105,8 +106,9 @@ export function LocalChainNotice({ network, className }: { network: NetworkKind 
   if (network !== "anvil-local") return null;
   return (
     <Callout tone="neutral" icon={<Info />} title="Local anvil chain (31337) - not Monad testnet" className={className}>
-      Transactions go to a development chain on this machine. They have no explorer and no value, and they are not Monad
-      transactions.
+      {SNAPSHOT_MODE
+        ? "The recorded transactions went to a development chain on the evaluator owner's machine. They have no explorer and no value, they are not Monad transactions, and that chain is not reachable from this hosted snapshot: every chain value here is as the backend recorded it."
+        : "Transactions go to a development chain on this machine. They have no explorer and no value, and they are not Monad transactions."}
     </Callout>
   );
 }

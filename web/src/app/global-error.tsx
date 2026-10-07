@@ -1,5 +1,7 @@
 "use client";
 
+import { SNAPSHOT_MANIFEST, SNAPSHOT_MODE, SNAPSHOT_SOURCE_URL, snapshotBannerText } from "@/lib/snapshot";
+
 /**
  * Last-resort boundary for errors in the root layout itself (providers, shell). It replaces
  * the whole document, so it carries its own minimal styles; route errors use app/error.tsx.
@@ -24,8 +26,18 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
           }
         `}</style>
         <main>
+          {SNAPSHOT_MODE ? (
+            <p>
+              <strong>{snapshotBannerText(SNAPSHOT_MANIFEST)}</strong>{" "}
+              {SNAPSHOT_SOURCE_URL ? <a href={SNAPSHOT_SOURCE_URL}>How to run it yourself</a> : null}
+            </p>
+          ) : null}
           <h1>CounterProof could not start this page</h1>
-          <p>The application shell failed to render. Nothing was sent to the backend or to a wallet because of this error.</p>
+          <p>
+            {SNAPSHOT_MODE
+              ? "The application shell failed to render. This is a read-only recorded snapshot; nothing is sent anywhere."
+              : "The application shell failed to render. Nothing was sent to the backend or to a wallet because of this error."}
+          </p>
           <p className="detail">{error.message || "Unknown error"}</p>
           {error.digest ? <code>Error digest: {error.digest}</code> : null}
           <div>

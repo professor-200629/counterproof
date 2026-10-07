@@ -15,6 +15,7 @@ import { finishedSummary, type ChallengeView } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { useChallenge, useConfig, useRuleTemplates } from "@/lib/queries";
 import { isEvaluationActive, isRunActive } from "@/lib/status";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { ActivityTab } from "./activity-tab";
 import { ChallengeHeader } from "./challenge-header";
 import { FindingsTab } from "./findings-tab";
@@ -103,7 +104,7 @@ export function ChallengeDetail({ id }: { id: string }) {
           },
           {
             id: "testing",
-            label: "Live testing",
+            label: SNAPSHOT_MODE ? "Testing (recorded)" : "Live testing",
             badge: view.runs.length ? (activeRuns ? `${activeRuns} active` : view.runs.length) : undefined,
             content: <TestingTab view={view} config={config.data ?? null} nowMs={nowMs} onShowFindings={() => setTab("findings")} />,
           },
@@ -143,7 +144,19 @@ function Summary({
   return (
     <div className="space-y-3">
       <StatGrid columns={4}>
-        <Stat label="Search runs" value={formatNumber(view.runs.length)} hint={activeRuns ? `${activeRuns} running or queued` : "none active"} />
+        <Stat
+          label="Search runs"
+          value={formatNumber(view.runs.length)}
+          hint={
+            SNAPSHOT_MODE
+              ? activeRuns
+                ? `${activeRuns} running or queued when recorded`
+                : "none active when recorded"
+              : activeRuns
+                ? `${activeRuns} running or queued`
+                : "none active"
+          }
+        />
         <Stat
           label="Unverified candidates"
           value={formatNumber(unverified)}
@@ -153,7 +166,7 @@ function Summary({
         <Stat
           label="Independent replays"
           value={formatNumber(view.evaluations.length)}
-          hint={activeEvals ? `${activeEvals} still replaying` : `${notReproduced} not reproduced`}
+          hint={activeEvals ? `${activeEvals} still replaying${SNAPSHOT_MODE ? " when recorded" : ""}` : `${notReproduced} not reproduced`}
         />
         <Stat
           label="Verified violations"

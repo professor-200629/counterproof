@@ -1,0 +1,88 @@
+{
+ "version": "0.1.0",
+ "network": "anvil-local",
+ "network_label": "Local anvil chain (31337) - not Monad testnet",
+ "chain": {
+  "network": "anvil-local",
+  "label": "Local anvil chain (31337) - not Monad testnet",
+  "chain_id": 31337,
+  "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "rpc": "http://127.0.0.1:8545",
+  "reachable": true,
+  "explorer_tx_url": null,
+  "rpc_chain_id": 31337,
+  "block": 14,
+  "chain_id_matches": true,
+  "contract_has_code": true
+ },
+ "evaluator_address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+ "signer": {
+  "url": "http://127.0.0.1:8011",
+  "reachable": true,
+  "configured": true,
+  "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+ },
+ "challenger_bot": {
+  "address": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "can_commit": true
+ },
+ "isolation": {
+  "process": {
+   "available": true,
+   "detail": "fresh child process; minimal environment; socket guard; OS resource limits (not a security sandbox)"
+  },
+  "container": {
+   "available": false,
+   "detail": "docker engine is not running"
+  }
+ },
+ "default_isolation": "process",
+ "providers": [
+  {
+   "provider": "groq",
+   "key_env": "GROQ_API_KEY",
+   "configured": true,
+   "key_present": true,
+   "availability": "not checked",
+   "default_model": "openai/gpt-oss-20b"
+  },
+  {
+   "provider": "openai",
+   "key_env": "OPENAI_API_KEY",
+   "configured": true,
+   "key_present": true,
+   "availability": "not checked",
+   "default_model": "gpt-4o-mini"
+  },
+  {
+   "provider": "openrouter",
+   "key_env": "OPENROUTER_API_KEY",
+   "configured": true,
+   "key_present": true,
+   "availability": "not checked",
+   "default_model": "openai/gpt-oss-20b:free"
+  }
+ ],
+ "live_model": {
+  "provider": "groq",
+  "model": "openai/gpt-oss-20b"
+ },
+ "components": {
+  "market": {
+   "name": "synthetic-market",
+   "version": "1.0.0",
+   "digest": "sha256:215a6caf951dc5e179cbefb77af326e4fcd683dbc0fbf267e00804a989c43a7e"
+  },
+  "runner": {
+   "name": "counterproof-runner",
+   "version": "1.0.3",
+   "digest": "sha256:16bf03d25f38ad1548007e7c98291a218fef168f8cf2d66cb0b631e0e546a898"
+  },
+  "checker": {
+   "name": "counterproof-checker",
+   "version": "1.0.0",
+   "digest": "sha256:5a3c9417905535f5077670afd7f93c9854729e70259d5c59c26ff66b345c0b95"
+  }
+ }
+}

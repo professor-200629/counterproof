@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ChallengeDetail } from "@/components/challenge/challenge-detail";
@@ -12,7 +13,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   return {
     title: `Challenge #${id}`,
-    description: "What was promised, live testing, findings and evidence for one CounterProof challenge.",
+    description: SNAPSHOT_MODE
+      ? "Read-only recorded snapshot: what was promised, the recorded search runs, findings and evidence for one CounterProof challenge."
+      : "What was promised, live testing, findings and evidence for one CounterProof challenge.",
   };
 }
 

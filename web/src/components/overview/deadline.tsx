@@ -3,6 +3,7 @@
 import { useNow } from "@/components/ui/time";
 import { cn } from "@/lib/cn";
 import { formatCountdown, formatRelative, formatUnix, toIso } from "@/lib/format";
+import { SNAPSHOT_MODE, deadlineAtSnapshot } from "@/lib/snapshot";
 
 const WORDS = {
   submission: { label: "Submissions", future: "close in", past: "closed", ssr: "close" },
@@ -31,7 +32,10 @@ export function Deadline({ kind, to, quiet = false, className }: DeadlineProps) 
   }
   let text: string;
   let tone = "text-muted";
-  if (now === null) {
+  if (SNAPSHOT_MODE) {
+    // A recording does not count down: the deadline, and whether it had passed when recorded.
+    text = `${w.label} ${w.ssr ? `${w.ssr} ` : ""}${formatUnix(to, { utc: true })} - ${deadlineAtSnapshot(to)}`;
+  } else if (now === null) {
     text = `${w.label} ${w.ssr ? `${w.ssr} ` : ""}${formatUnix(to, { utc: true })}`;
   } else {
     const left = to - now / 1000;

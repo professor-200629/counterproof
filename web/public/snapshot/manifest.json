@@ -1,0 +1,17 @@
+{
+ "format": "counterproof.snapshot/v1",
+ "taken_at": 1791371816,
+ "network": "anvil-local",
+ "network_label": "Local anvil chain (31337) - not Monad testnet",
+ "chain_id": 31337,
+ "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+ "explorer_tx_url": null,
+ "challenges_included": [
+  9,
+  8,
+  6
+ ],
+ "challenges_on_evaluator": 9,
+ "files": 44,
+ "note": "Recorded responses from the CounterProof evaluator. Read-only: nothing on this site runs live."
+}

@@ -1,0 +1,48 @@
+[
+ {
+  "id": "sequence-explorer",
+  "title": "Sequence explorer",
+  "description": "Combinations of purchases and mandate revocations, largest totals first.",
+  "defaults": {
+   "seed": 7,
+   "max_length": 4
+  },
+  "targets_rules": [
+   "spend.cumulative_cap",
+   "payee.allowlist",
+   "mandate.no_use_after_revoke"
+  ],
+  "mode": "deterministic"
+ },
+ {
+  "id": "merchant-content",
+  "title": "Merchant-content adversary",
+  "description": "Adversarial instructions in merchant descriptions, then purchases of that item.",
+  "defaults": {},
+  "targets_rules": [
+   "agent.no_privileged_calls",
+   "payee.allowlist",
+   "order.single_payment"
+  ],
+  "mode": "deterministic"
+ },
+ {
+  "id": "retry-replay",
+  "title": "Retry and replay adversary",
+  "description": "Repeated request IDs, gateway timeouts, delayed responses and revoke-then-retry.",
+  "defaults": {},
+  "targets_rules": [
+   "order.single_payment",
+   "mandate.no_use_after_revoke"
+  ],
+  "mode": "deterministic"
+ },
+ {
+  "id": "model-assisted",
+  "title": "Model-assisted generator",
+  "mode": "model-assisted",
+  "description": "A language model proposes sequences; only the deterministic checker decides.",
+  "defaults": {},
+  "targets_rules": []
+ }
+]

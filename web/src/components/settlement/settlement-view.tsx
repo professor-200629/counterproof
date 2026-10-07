@@ -21,6 +21,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Countdown, DateTime, TimeAgo, useNow } from "@/components/ui/time";
 import {
   evidenceDownloadUrl,
+  evidenceFilename,
   finishedSummary,
   type AppConfig,
   type ChallengeView,
@@ -48,6 +49,8 @@ import {
   txsOfKind,
 } from "./derive";
 import { OffchainSettlement } from "./offchain-settlement";
+import { ReadOnlyNote, RecordedMark } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { FailedAttempts, RecordedTxList } from "./recorded-tx";
 import { Timeline, TimelineStep, type TimelineState } from "./timeline";
 import { plural, sameHex } from "@/lib/format";
@@ -162,7 +165,11 @@ function OnchainSettlement({ view, settlement, config }: OnchainProps) {
 
       <Section
         title="Settlement timeline"
-        description="Each step shows what the backend recorded after reading receipts from the chain, or what this page read from the contract itself. Nothing here is taken from the wallet's word."
+        description={
+          SNAPSHOT_MODE
+            ? `Each step shows what the evaluator's backend recorded after reading receipts from the chain, as captured in this snapshot.${view.network === "monad-testnet" ? " Credits are read live from the contract on Monad testnet; everything else is recorded." : ""} Nothing here is taken from a wallet's word.`
+            : "Each step shows what the backend recorded after reading receipts from the chain, or what this page read from the contract itself. Nothing here is taken from the wallet's word."
+        }
       >
         <Timeline label="Settlement steps">
           <FundedStep view={view} settlement={settlement} config={config} />
@@ -275,9 +282,17 @@ function AnswerCallout({
   else if (!isPayableVerdict(evaluation)) next = "The latest evaluated submission did not produce a payable verdict.";
   else if (!attestation) next = "A verified violation is waiting for the declared evaluator's signature.";
   else if (nowSec !== null && nowSec > attestation.expiry) next = "The attestation expired before anyone relayed it.";
-  else next = "The attestation is signed. Anyone may relay it below; the reward goes to the bound recipient.";
+  else
+    next = SNAPSHOT_MODE
+      ? "The attestation was signed. Anyone could relay it to the contract; this read-only snapshot cannot. The reward goes to the bound recipient."
+      : "The attestation is signed. Anyone may relay it below; the reward goes to the bound recipient.";
   return (
-    <Callout tone="warn" icon={<Hourglass />} title={`Not paid yet: ${formatWei(reward, view.network)} in escrow`} role="status">
+    <Callout
+      tone="warn"
+      icon={<Hourglass />}
+      title={`Not paid${SNAPSHOT_MODE ? " when recorded" : " yet"}: ${formatWei(reward, view.network)} in escrow`}
+      role="status"
+    >
       {next}
     </Callout>
   );
@@ -345,7 +360,10 @@ function FundedStep({ view, settlement, config }: { view: ChallengeView; settlem
             value: (
               <span>
                 <span className="font-semibold tabular">{formatWei(reward, view.network)}</span>{" "}
-                <span className="text-xs text-muted">{onchain ? "(contract value, read by the backend)" : "(spec value)"}</span>
+                <span className="text-xs text-muted">
+                  {onchain ? `(contract value, read by the backend${SNAPSHOT_MODE ? " when recorded" : ""})` : "(spec value)"}
+                </span>{" "}
+                {onchain ? <RecordedMark what="This contract value" /> : null}
               </span>
             ),
           },
@@ -353,7 +371,10 @@ function FundedStep({ view, settlement, config }: { view: ChallengeView; settlem
             key: "status",
             label: "Contract says",
             value: onchain ? (
-              <StatusBadge status={onchain.status} domain="onchain" size="sm" />
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <StatusBadge status={onchain.status} domain="onchain" size="sm" />
+                <RecordedMark what="The contract status" />
+              </span>
             ) : (
               <span className="text-xs text-muted">{view.onchain_id ? "not read (see the warning above)" : "no on-chain id yet"}</span>
             ),
@@ -396,7 +417,9 @@ function FundedStep({ view, settlement, config }: { view: ChallengeView; settlem
           <h4 id="fund-now-heading" className="text-sm font-semibold text-fg">
             Fund challenge #{view.id}
           </h4>
-          {config ? (
+          {SNAPSHOT_MODE ? (
+            <ReadOnlyNote action="Funding this challenge" />
+          ) : config ? (
             <FundingPanel config={config} created={{ challenge: view, spec: view.spec, digest: view.spec_digest }} inPlace />
           ) : (
             <p className="text-sm text-muted">Loading the backend configuration (contract and chain) before funding can be offered.</p>
@@ -476,7 +499,9 @@ function ReplayStep({ view, evaluation }: { view: ChallengeView; evaluation: Eva
   let summary = "Nothing has been replayed yet.";
   if (evaluation && isEvaluationActive(evaluation.status)) {
     state = "current";
-    summary = "The evaluator is replaying the sequence in a fresh synthetic marketplace; no verdict yet.";
+    summary = SNAPSHOT_MODE
+      ? "Still replaying when recorded; no verdict in this recording."
+      : "The evaluator is replaying the sequence in a fresh synthetic marketplace; no verdict yet.";
   } else if (s?.outcome === "verified_violation") {
     state = "complete";
     summary = s.reason;
@@ -534,7 +559,7 @@ function ReplayStep({ view, evaluation }: { view: ChallengeView; evaluation: Eva
               Open evidence
             </ButtonLink>
             {evaluation.evidence_digest ? (
-              <ButtonLink href={evidenceDownloadUrl(evaluation.evidence_digest)} external download size="sm" variant="ghost" icon={<Download />}>
+              <ButtonLink href={evidenceDownloadUrl(evaluation.evidence_digest)} external download={evidenceFilename(evaluation.evidence_digest)} size="sm" variant="ghost" icon={<Download />}>
                 Download JSON
               </ButtonLink>
             ) : null}
@@ -580,7 +605,7 @@ function AttestStep({
     }
   } else if (evaluation && payable && view.status === "funded") {
     state = "current";
-    summary = "Waiting for the declared evaluator's signer.";
+    summary = SNAPSHOT_MODE ? "Awaiting the evaluator's signature when recorded." : "Waiting for the declared evaluator's signer.";
   } else if (evaluation && finishedSummary(evaluation) && !payable) {
     state = "skipped";
     summary = "No payable verdict, so there is nothing to attest.";
@@ -616,7 +641,7 @@ function RequestAttestation({ view, evaluation, config }: { view: ChallengeView;
         The evaluator&apos;s signer re-checks the evidence bundle and the on-chain commitment before it signs, and refuses if
         anything differs. Declared evaluator: <Address value={view.spec.evaluator.address} label="declared evaluator" />
       </p>
-      {config && !config.signer.reachable ? (
+      {config && !config.signer.reachable && !SNAPSHOT_MODE ? (
         <Callout tone="warn" title="Signer not reachable" role="status">
           /api/config reports the signer service at {config.signer.url} as unreachable, so a request will fail until it is running.
         </Callout>
@@ -626,15 +651,19 @@ function RequestAttestation({ view, evaluation, config }: { view: ChallengeView;
           Last attempt (<TimeAgo ts={note.created_at} />): {note.message}
         </p>
       ) : null}
-      <Button
-        variant="primary"
-        icon={<PenLine />}
-        onClick={() => attest.mutate(evaluation.id)}
-        busy={attest.isPending}
-        busyLabel="Asking the signer"
-      >
-        Ask the evaluator to sign
-      </Button>
+      {SNAPSHOT_MODE ? (
+        <ReadOnlyNote action="Asking the evaluator to sign an attestation" />
+      ) : (
+        <Button
+          variant="primary"
+          icon={<PenLine />}
+          onClick={() => attest.mutate(evaluation.id)}
+          busy={attest.isPending}
+          busyLabel="Asking the signer"
+        >
+          Ask the evaluator to sign
+        </Button>
+      )}
       {attest.isError ? <ErrorState error={attest.error} title="The signer did not attest" compact /> : null}
       {attest.isSuccess ? <p className="text-sm text-ok">Signed. The attestation is shown here once the page refreshes its data.</p> : null}
     </div>
@@ -673,8 +702,12 @@ function SettleStep({
     state = lastFailed ? "error" : "current";
     stateLabel = lastFailed ? "Last attempt failed" : undefined;
     summary = lastFailed
-      ? "The last settle transaction failed on chain. Nothing was paid; you can relay again if the attestation is still valid."
-      : "Ready to relay. Anyone may send it.";
+      ? SNAPSHOT_MODE
+        ? "The last settle transaction had failed on chain when recorded; nothing was paid."
+        : "The last settle transaction failed on chain. Nothing was paid; you can relay again if the attestation is still valid."
+      : SNAPSHOT_MODE
+        ? "Signed but not relayed when recorded."
+        : "Ready to relay. Anyone may send it.";
   }
   const recipient = detailString(settledTx, "recipient") ?? attestation?.typed_data.message.recipient ?? null;
   return (
@@ -727,7 +760,9 @@ function SettleStep({
         <SettleAction view={view} attestation={attestation} onchain={settlement.onchain} nowSec={nowSec} {...target} />
       ) : (
         <p className="text-sm text-muted">
-          The settle button appears here once the declared evaluator has signed an attestation for a verified violation.
+          {SNAPSHOT_MODE
+            ? "No attestation for a verified violation had been signed when this snapshot was recorded, so there was nothing to settle."
+            : "The settle button appears here once the declared evaluator has signed an attestation for a verified violation."}
         </p>
       )}
       {settleTxs.some((t) => t.status !== "confirmed") ? (

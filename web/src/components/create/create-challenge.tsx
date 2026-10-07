@@ -48,22 +48,7 @@ import { StepRules } from "./step-rules";
 import { StepScope } from "./step-scope";
 import { StepTarget } from "./step-target";
 import { StepTerms } from "./step-terms";
-
-const STEPS = [
-  { id: "target", label: "Target", description: "Agent and version" },
-  { id: "rules", label: "Rules", description: "Explicit, checkable promises" },
-  { id: "scope", label: "Scope & evaluator", description: "Fixed terms, read-only" },
-  { id: "terms", label: "Reward & deadlines", description: "Title, mode, money, time" },
-  { id: "review", label: "Review & publish", description: "Exact spec and digest" },
-] as const;
-
-const STEP_INTRO: Record<(typeof STEPS)[number]["id"], string> = {
-  target: "Choose the agent version the promises are about. Its provenance travels with every result.",
-  rules: "Choose which promises challengers may try to break, and set their parameters.",
-  scope: "What challengers may do, the limits of each replay, and who checks it. Read-only.",
-  terms: "Name the challenge, choose on-chain or off-chain, the reward and the deadlines.",
-  review: "Check the exact spec that will be published, then store it and, on chain, fund it.",
-};
+import { STEPS, STEP_INTRO } from "./steps";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);

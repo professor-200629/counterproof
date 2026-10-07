@@ -7,6 +7,8 @@ import type { AppConfig, ChallengeView, Strategy } from "@/lib/api";
 import { formatNumber, plural } from "@/lib/format";
 import { useStrategies } from "@/lib/queries";
 import { isRunActive } from "@/lib/status";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { RunCard } from "./run-card";
 import { StrategyCard } from "./strategy-card";
 
@@ -43,23 +45,27 @@ export function TestingTab({ view, config, nowMs, onShowFindings }: TestingTabPr
 
   return (
     <div className="space-y-8">
-      <div className="space-y-3">
-        {blocked ? (
-          <Callout tone="neutral" title="Runs are closed">
-            {blocked} The backend refuses new search runs for this challenge.
-          </Callout>
-        ) : null}
-        {iso && !iso.available ? (
-          <Callout tone="warn" title={`Required isolation "${requiredIso}" is unavailable`}>
-            {iso.detail}. Runs and replays for this spec fail closed until it is available.
-          </Callout>
-        ) : null}
-        {requiresModel && !config?.live_model.provider ? (
-          <Callout tone="warn" title="This target needs a live model">
-            The backend has no live model provider configured (COUNTERPROOF_LLM_PROVIDER), so it will refuse runs against this target.
-          </Callout>
-        ) : null}
-      </div>
+      {SNAPSHOT_MODE ? (
+        <ReadOnlyNote action="Starting or cancelling a search run" />
+      ) : (
+        <div className="space-y-3">
+          {blocked ? (
+            <Callout tone="neutral" title="Runs are closed">
+              {blocked} The backend refuses new search runs for this challenge.
+            </Callout>
+          ) : null}
+          {iso && !iso.available ? (
+            <Callout tone="warn" title={`Required isolation "${requiredIso}" is unavailable`}>
+              {iso.detail}. Runs and replays for this spec fail closed until it is available.
+            </Callout>
+          ) : null}
+          {requiresModel && !config?.live_model.provider ? (
+            <Callout tone="warn" title="This target needs a live model">
+              The backend has no live model provider configured (COUNTERPROOF_LLM_PROVIDER), so it will refuse runs against this target.
+            </Callout>
+          ) : null}
+        </div>
+      )}
 
       <Section
         title="Search strategies"
@@ -92,14 +98,22 @@ export function TestingTab({ view, config, nowMs, onShowFindings }: TestingTabPr
         title="Runs"
         description={
           runs.length
-            ? `${formatNumber(runs.length)} ${plural(runs.length, "run")}${activeCount ? `, ${activeCount} active - progress refreshes from the worker's own counts` : ""}.`
+            ? SNAPSHOT_MODE
+              ? `${formatNumber(runs.length)} ${plural(runs.length, "run")}${activeCount ? `, ${activeCount} still active when recorded - progress as the worker last reported it` : ""}, as recorded.`
+              : `${formatNumber(runs.length)} ${plural(runs.length, "run")}${activeCount ? `, ${activeCount} active - progress refreshes from the worker's own counts` : ""}.`
             : undefined
         }
       >
         {runs.length === 0 ? (
           <EmptyState
             title="No runs yet"
-            description={blocked ? blocked : "Start a strategy above. Progress comes only from the worker's reported counts."}
+            description={
+              SNAPSHOT_MODE
+                ? "No search run had been started when this snapshot was recorded."
+                : blocked
+                  ? blocked
+                  : "Start a strategy above. Progress comes only from the worker's reported counts."
+            }
             compact
           />
         ) : (

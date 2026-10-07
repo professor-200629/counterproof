@@ -2,6 +2,7 @@ import { CircleAlert, Inbox, SearchX, Unplug } from "lucide-react";
 import type { ReactNode } from "react";
 import { ApiError, isBackendUnreachable } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { NOT_IN_SNAPSHOT, SNAPSHOT_MODE } from "@/lib/snapshot";
 
 // ---------------------------------------------------------------------------- empty
 export interface EmptyStateProps {
@@ -51,7 +52,17 @@ export function ErrorState({ error, title, onRetry, className, compact }: ErrorS
   const unreachable = isBackendUnreachable(error);
   const api = error instanceof ApiError ? error : null;
   const detail = api ? api.detail : error instanceof Error ? error.message : String(error ?? "Unknown error");
-  const heading = title ?? (unreachable ? "Backend unreachable" : api?.status === 404 ? "Not found" : "Request failed");
+  const heading =
+    title ??
+    (unreachable
+      ? SNAPSHOT_MODE
+        ? "Recorded snapshot file could not be loaded"
+        : "Backend unreachable"
+      : api?.status === 404
+        ? SNAPSHOT_MODE
+          ? `Not found: ${NOT_IN_SNAPSHOT}`
+          : "Not found"
+        : "Request failed");
   return (
     <div
       role="alert"
@@ -68,7 +79,7 @@ export function ErrorState({ error, title, onRetry, className, compact }: ErrorS
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-bad">{heading}</p>
           <p className="mt-1 break-words text-fg">{detail}</p>
-          {api && !unreachable ? (
+          {api && !unreachable && !SNAPSHOT_MODE ? (
             <p className="mt-1 font-mono text-xs text-muted">
               HTTP {api.status}
               {api.kind ? ` - ${api.kind}` : ""} - /api{api.path}
@@ -154,6 +165,17 @@ export function isNotFound(error: unknown): boolean {
 export function QueryState({ query, label, rows, card, notFound, errorTitle }: QueryStateProps) {
   if (query.isPending) return <Loading label={label} rows={rows} card={card} />;
   if (query.isError) {
+    // Snapshot mode: a 404 means the export left this out, not that it does not exist.
+    if (SNAPSHOT_MODE && isNotFound(query.error)) {
+      return (
+        <EmptyState
+          icon={<SearchX />}
+          title={`This ${label} is ${NOT_IN_SNAPSHOT}`}
+          description={`${(query.error as ApiError).detail} The snapshot holds only what was exported from the evaluator; the evaluator itself runs only on its owner's machine.`}
+          action={notFound?.action}
+        />
+      );
+    }
     if (notFound && isNotFound(query.error)) {
       return <EmptyState icon={<SearchX />} title={notFound.title} description={notFound.description} action={notFound.action} />;
     }

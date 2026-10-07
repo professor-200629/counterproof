@@ -31,6 +31,8 @@ import {
 import { isRegressionActive } from "@/lib/status";
 import { ActionSequence } from "./action-sequence";
 import { ExportPanel, RegressionList, RegressionProgress } from "./regression-parts";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { VersionColumn } from "./version-column";
 
 export interface CompareInitial {
@@ -177,14 +179,22 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
   return (
     <div className="space-y-8">
       <Section
-        title="Replay a verified counterexample"
-        description="The evaluator replays the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against the version you choose. No reward is involved."
+        title={SNAPSHOT_MODE ? "Verified counterexample" : "Replay a verified counterexample"}
+        description={
+          SNAPSHOT_MODE
+            ? "The evaluator replayed the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against another version. Below is what it recorded. No reward is involved."
+            : "The evaluator replays the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against the version you choose. No reward is involved."
+        }
       >
         {verified.length === 0 ? (
           <EmptyState
             icon={<ShieldQuestion />}
             title="No verified violation to compare yet"
-            description="A before / after comparison starts from a sequence the evaluator has independently verified. Run a search and submit a candidate on the challenge page first."
+            description={
+              SNAPSHOT_MODE
+                ? "A before / after comparison starts from a sequence the evaluator has independently verified; none had been verified for this challenge when the snapshot was recorded."
+                : "A before / after comparison starts from a sequence the evaluator has independently verified. Run a search and submit a candidate on the challenge page first."
+            }
             action={
               <ButtonLink href={`/challenges/${view.id}`} size="sm">
                 Open the challenge
@@ -206,9 +216,15 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
                     const s = finishedSummary(originalEvaluationFor(view, c.id));
                     return { value: c.id, label: `${c.claimed_rule}: ${s?.summary ?? c.digest} (${c.id})` };
                   })}
-                  hint="Only candidates the evaluator verified as violations are listed (newest first)."
+                  hint={
+                    SNAPSHOT_MODE
+                      ? "Shows the recorded comparison for this counterexample. Only candidates the evaluator verified as violations are listed (newest first)."
+                      : "Only candidates the evaluator verified as violations are listed (newest first)."
+                  }
                 />
-                {targetsQ.isError ? (
+                {SNAPSHOT_MODE ? (
+                  <ReadOnlyNote action="Replaying this counterexample against another version (a new regression)" className="self-start" />
+                ) : targetsQ.isError ? (
                   <ErrorState error={targetsQ.error} title="Could not load target versions" onRetry={() => void targetsQ.refetch()} compact />
                 ) : (
                   <Select
@@ -222,22 +238,24 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
                   />
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="primary"
-                  icon={<Play />}
-                  onClick={onStart}
-                  disabled={!candidateId || !targetKey}
-                  busy={create.isPending}
-                  busyLabel="Queueing the replay"
-                >
-                  Replay against {targetKey ?? "the chosen version"}
-                </Button>
-                {selectedTarget ? (
-                  <ProvenanceBadge kind="target" value={selectedTarget.label} requiresModel={selectedTarget.requires_model} size="md" />
-                ) : null}
-              </div>
-              {selectedTarget?.label === "independent-implementation" ? (
+              {SNAPSHOT_MODE ? null : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="primary"
+                    icon={<Play />}
+                    onClick={onStart}
+                    disabled={!candidateId || !targetKey}
+                    busy={create.isPending}
+                    busyLabel="Queueing the replay"
+                  >
+                    Replay against {targetKey ?? "the chosen version"}
+                  </Button>
+                  {selectedTarget ? (
+                    <ProvenanceBadge kind="target" value={selectedTarget.label} requiresModel={selectedTarget.requires_model} size="md" />
+                  ) : null}
+                </div>
+              )}
+              {!SNAPSHOT_MODE && selectedTarget?.label === "independent-implementation" ? (
                 <p className="text-xs text-warn">
                   This version is driven by a hosted language model: its replays are stochastic and need a configured model
                   provider, so a result may differ between runs.
@@ -286,7 +304,11 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
                   <EmptyState
                     compact
                     title="Not replayed against a new version yet"
-                    description="Choose a version above and start the replay; the result appears here."
+                    description={
+                      SNAPSHOT_MODE
+                        ? "No regression of this counterexample had been recorded when the snapshot was taken."
+                        : "Choose a version above and start the replay; the result appears here."
+                    }
                   />
                 ) : active ? (
                   <RegressionProgress regression={regression} />

@@ -20,6 +20,8 @@ import { ObservedView } from "@/components/evidence/observed";
 import { VerdictBadge } from "@/components/evidence/verdict";
 import { Mono, TextLink } from "@/components/ui/text-link";
 import { Disclosure } from "@/components/ui/disclosure";
+import { ReadOnlyNote } from "@/components/snapshot";
+import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /** Why the backend would refuse a submission now (services.submit_candidate), or null. */
 function submitBlockedReason(view: ChallengeView, nowMs: number | null): string | null {
@@ -50,7 +52,11 @@ export function FindingsTab({ view, config, nowMs }: FindingsTabProps) {
         {candidates.length === 0 ? (
           <EmptyState
             title="No candidates yet"
-            description="Candidates appear here when a search run's self-check flags a sequence. Start a run under Live testing."
+            description={
+              SNAPSHOT_MODE
+                ? "No search run's self-check had flagged a sequence when this snapshot was recorded."
+                : "Candidates appear here when a search run's self-check flags a sequence. Start a run under Live testing."
+            }
             compact
           />
         ) : (
@@ -75,7 +81,7 @@ export function FindingsTab({ view, config, nowMs }: FindingsTabProps) {
         actions={
           hasVerified ? (
             <ButtonLink href={`/challenges/${view.id}/compare`} size="sm" icon={<GitCompare />}>
-              Repair and re-test
+              {SNAPSHOT_MODE ? "Before / after (recorded)" : "Repair and re-test"}
             </ButtonLink>
           ) : null
         }
@@ -83,7 +89,11 @@ export function FindingsTab({ view, config, nowMs }: FindingsTabProps) {
         {evaluations.length === 0 ? (
           <EmptyState
             title="Nothing has been submitted for independent replay"
-            description="Submit a candidate above. The evaluator's verdict, ledger and digests then appear here."
+            description={
+              SNAPSHOT_MODE
+                ? "No candidate had been submitted for independent replay when this snapshot was recorded."
+                : "Submit a candidate above. The evaluator's verdict, ledger and digests then appear here."
+            }
             compact
           />
         ) : (
@@ -255,7 +265,9 @@ function CandidateCard({ candidate: c, view, config, evaluation, blockedReason }
           </Callout>
         ) : null}
 
-        {canSubmit ? (
+        {canSubmit && SNAPSHOT_MODE ? (
+          <ReadOnlyNote action="Submitting this candidate for independent replay" />
+        ) : canSubmit ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <Button

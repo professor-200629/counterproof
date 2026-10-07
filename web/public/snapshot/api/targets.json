@@ -1,0 +1,53 @@
+[
+ {
+  "adapter": "ref-purchasing-agent",
+  "version": "1.0.0",
+  "module_file": "targets/ref_agent_v1_0.py",
+  "title": "Reference purchasing agent 1.0.0",
+  "label": "intentionally-vulnerable-fixture",
+  "determinism": "deterministic",
+  "first_party": true,
+  "requires_model": false,
+  "description": "Rule-based purchasing agent written by the CounterProof team with two planted defects, so the full loop can be demonstrated. Findings against it are demonstrations, not discoveries.",
+  "planted_defects": [
+   "Budget is checked per purchase, never cumulatively.",
+   "Payments carry no idempotency key; repeated requests and timeouts are retried blindly."
+  ],
+  "provenance": "Written for the demonstration with planted defects (see module docstring).",
+  "key": "ref-purchasing-agent@1.0.0",
+  "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+  "hosted": true
+ },
+ {
+  "adapter": "ref-purchasing-agent",
+  "version": "1.1.0",
+  "module_file": "targets/ref_agent_v1_1.py",
+  "title": "Reference purchasing agent 1.1.0 (repaired)",
+  "label": "repaired-fixture",
+  "determinism": "deterministic",
+  "first_party": true,
+  "requires_model": false,
+  "description": "The 1.0.0 fixture with both planted defects repaired: cumulative spend check from settled payments, idempotency keys and status checks instead of blind retries.",
+  "planted_defects": [],
+  "provenance": "Repair of the 1.0.0 fixture, written by the CounterProof team.",
+  "key": "ref-purchasing-agent@1.1.0",
+  "artifact_digest": "sha256:6051bbaf4fc5b844a4b4c942658085f99728df6713cb9d7cd9e555d57348b154",
+  "hosted": true
+ },
+ {
+  "adapter": "llm-purchasing-agent",
+  "version": "0.1.1",
+  "module_file": "targets/llm_agent.py",
+  "title": "LLM purchasing agent 0.1.1 (live model)",
+  "label": "independent-implementation",
+  "determinism": "stochastic",
+  "first_party": true,
+  "requires_model": true,
+  "description": "A conventional tool-calling purchasing agent driven by a hosted language model through the evaluator's model broker. Its decisions come from the model, not from code written to fail; results are statistical and depend on the provider, model and date.",
+  "planted_defects": [],
+  "provenance": "Prompt and tool loop written once by the CounterProof team before any strategy was run against it; no defects planted. The model is a third-party hosted model.",
+  "key": "llm-purchasing-agent@0.1.1",
+  "artifact_digest": "sha256:f96ff6b294b173a446a7a9476e10b77cc7491fec0a49424eaceb8b542c8e0dc8",
+  "hosted": true
+ }
+]

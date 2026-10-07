@@ -4,6 +4,7 @@ import { FileText, Globe, Server, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { networkLabel } from "@/lib/chain";
 import { useConfig } from "@/lib/queries";
+import { SNAPSHOT_MANIFEST, SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /**
  * Top-bar badge for the backend's configured network, e.g.
@@ -12,6 +13,22 @@ import { useConfig } from "@/lib/queries";
  */
 export function NetworkBadge() {
   const { data: config, isPending, isError } = useConfig();
+  if (SNAPSHOT_MODE) {
+    // The recorded network, from the build's manifest. The backend's RPC / contract health
+    // was a moment in the recording, not something this page checks.
+    const n = SNAPSHOT_MANIFEST?.network ?? config?.network;
+    if (!n) return <Badge tone="neutral">Network: as recorded</Badge>;
+    const icon = n === "monad-testnet" ? <Globe /> : n === "anvil-local" ? <Server /> : <FileText />;
+    return (
+      <Badge
+        tone="neutral"
+        icon={icon}
+        title={`Recorded on ${SNAPSHOT_MANIFEST?.network_label ?? config?.network_label ?? networkLabel(n)}. This hosted snapshot is not connected to that network's evaluator.`}
+      >
+        {networkLabel(n)}
+      </Badge>
+    );
+  }
   if (isPending) {
     return (
       <Badge tone="neutral" aria-live="polite">
