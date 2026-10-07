@@ -32,6 +32,16 @@ Monad testnet is waiting for testnet MON.
 Tests on 2026-10-06 (latest run): backend **78 passed**; contracts **58 passed**; web unit
 tests **80 passed**; web build ok.
 
+## Hosted read-only console
+
+https://counterproof.vercel.app (Vercel project `counterproof`, deployed 2026-10-07 with the owner's
+approval). It shows a recorded snapshot (challenges 6, 8, 9 of 9; local anvil, labelled "not Monad")
+and runs nothing live. Verified: all routes and assets return 200 from Vercel; the identical build
+rendered fully at localhost with no backend running. The in-app browser blocks Vercel's script
+assets, so the hosted page itself was not watched rendering - open it in a normal browser to confirm.
+Redeploy: `scripts/export_snapshot.py --challenges ...` then
+`cd web && npx vercel deploy --prod --yes --build-env NEXT_PUBLIC_SNAPSHOT=1`.
+
 ## Web console — verified in the browser (2026-10-06, local anvil)
 
 Walked through with the labelled local dev wallet: create (5 steps; browser-recomputed spec
