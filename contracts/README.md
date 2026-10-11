@@ -30,7 +30,7 @@ The contract has no tokens, staking, slashing, governance, upgradeability or adm
 ## Prerequisites
 
 - Foundry 1.8 or later (tested with forge/anvil/cast **1.8.5**). Monad support is built in through `network = "monad"` and `anvil --network monad`.
-  On this machine Foundry is not on `PATH`. Use `C:/Users/Balu/.foundry/bin/forge.exe` (and `anvil.exe`, `cast.exe`), or add that folder to `PATH`.
+  On Windows, if Foundry is not on `PATH`, use `%USERPROFILE%/.foundry/bin/forge.exe` (and `anvil.exe`, `cast.exe`), or add that folder to `PATH`.
 - The dependencies are git submodules under `lib/`: forge-std v1.17.0 and openzeppelin-contracts v5.6.1. After a fresh clone, fetch them and check the pins:
 
 ```sh
