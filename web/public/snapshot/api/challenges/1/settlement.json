@@ -1,0 +1,93 @@
+{
+ "challenge": {
+  "id": 1,
+  "spec_digest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+  "status": "settled",
+  "network": "monad-testnet",
+  "chain_id": 10143,
+  "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+  "onchain_id": "1",
+  "fund_tx": "0x910f5b39f24f3f0c952376e2c64cd1de8857d55003ce215d529d1887c39c6d8c",
+  "reward_wei": "10000000000000000",
+  "note": null,
+  "created_at": 1791737906,
+  "updated_at": 1791737927
+ },
+ "attestation": {
+  "typed_data": {
+   "domain": {
+    "name": "CounterProof",
+    "version": "1",
+    "chainId": 10143,
+    "verifyingContract": "0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4"
+   },
+   "types": {
+    "Attestation": [
+     {
+      "name": "challengeId",
+      "type": "uint256"
+     },
+     {
+      "name": "specDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "submissionId",
+      "type": "bytes32"
+     },
+     {
+      "name": "candidateDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "evidenceDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "challenger",
+      "type": "address"
+     },
+     {
+      "name": "recipient",
+      "type": "address"
+     },
+     {
+      "name": "verdict",
+      "type": "uint8"
+     },
+     {
+      "name": "expiry",
+      "type": "uint64"
+     }
+    ]
+   },
+   "primaryType": "Attestation",
+   "message": {
+    "challengeId": 1,
+    "specDigest": "0x0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+    "submissionId": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+    "candidateDigest": "0x95c47a59a1c35dd9a64cffcb47af769ca3e8bec1506e64651a76def49d6d343d",
+    "evidenceDigest": "0x94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647",
+    "challenger": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+    "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+    "verdict": 1,
+    "expiry": 1791741506
+   }
+  },
+  "signature": "0xa0f8dd1c4e1bfa5b843bbecd2f830420926a2a6053ba834deb90af0d0315ed19574a3f10234f2d138d0548eaf0c53c1bca0574630c8638b1cf803c01e46550251b",
+  "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+  "expiry": 1791741506,
+  "evaluation_id": "eval_244ea02221bd4012"
+ },
+ "onchain": {
+  "publisher": "0x27d338b0a15d73b7ae74d4bc70c134f67a0275fa",
+  "evaluator": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+  "submission_deadline": 1791739706,
+  "settlement_deadline": 1791741506,
+  "status": "settled",
+  "reward_wei": "10000000000000000",
+  "spec_digest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+  "settled_submission": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5"
+ },
+ "explorer_template": "https://testnet.monadscan.com/tx/{hash}"
+}

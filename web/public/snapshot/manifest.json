@@ -1,17 +1,17 @@
 {
  "format": "counterproof.snapshot/v1",
- "taken_at": 1791371816,
- "network": "anvil-local",
- "network_label": "Local anvil chain (31337) - not Monad testnet",
- "chain_id": 31337,
- "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
- "explorer_tx_url": null,
+ "taken_at": 1791739811,
+ "network": "monad-testnet",
+ "network_label": "Monad Testnet (10143)",
+ "chain_id": 10143,
+ "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+ "explorer_tx_url": "https://testnet.monadscan.com/tx/{hash}",
  "challenges_included": [
-  9,
-  8,
-  6
+  3,
+  2,
+  1
  ],
- "challenges_on_evaluator": 9,
- "files": 44,
+ "challenges_on_evaluator": 3,
+ "files": 37,
  "note": "Recorded responses from the CounterProof evaluator. Read-only: nothing on this site runs live."
 }

@@ -13,7 +13,12 @@ weights are only visible after sign-in and were **not** verified.
 - **Tagline:** Put AI promises to the test.
 - **Primary track:** 04 — Trust, Identity & AI Infrastructure
 - **Repository:** https://github.com/professor-200629/counterproof (public)
-- **Live product:** _(to add — contract on Monad Testnet + console; see STATUS.md)_
+- **Live product:** https://counterproof.vercel.app (read-only console with the recorded Monad
+  testnet run) · contract `0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4` on Monad Testnet (10143),
+  source verified: https://testnet.monadscan.com/address/0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4
+- **ERC-8004:** agents 2190 (vulnerable fixture) and 2192 (live-model agent) on the official
+  IdentityRegistry; feedback from reporter `0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a` on the
+  official ReputationRegistry (see STATUS.md for every transaction)
 
 ## Short description (≤ 280 characters)
 
@@ -68,7 +73,9 @@ primary failure comes from an intentionally vulnerable reference agent with plan
 defects, and the interface labels it that way. We also evaluated a second implementation —
 a live-model purchasing agent with no planted defects — and report what we actually found:
 no violation within budget from two strategies, and one verified violation (3 of 3 replays)
-where injected merchant text led the agent to request a budget increase for itself.
+where injected merchant text led the agent to request a budget increase for itself. On Monad
+testnet (2026-10-11) the search found that again on its own, the evaluator verified it in 3 of
+3 fresh replays, and the reward was settled and the result recorded in ERC-8004.
 
 ## Why Monad
 

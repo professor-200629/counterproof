@@ -1,0 +1,15 @@
+[
+ {
+  "id": "reg_2ae4a45e005640b5",
+  "source_candidate_id": "cand_ee51a20405954bdf",
+  "source_challenge_id": 1,
+  "target_key": "ref-purchasing-agent@1.1.0",
+  "spec_digest": "sha256:7c5f1489ee162d527dbaea9998d7ef864a90f485fd94df16327ab4de2cbb0608",
+  "job_id": "job_ceeedb96fbdf4143",
+  "status": "not_reproduced",
+  "outcome": "not_reproduced",
+  "evidence_digest": "sha256:d5fb123ece4bed016c0d2e2c3f3722f985c88b71f8fafd526107297fc7e105ef",
+  "created_at": 1791737940,
+  "finished_at": 1791737941
+ }
+]

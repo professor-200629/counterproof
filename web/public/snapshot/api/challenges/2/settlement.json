@@ -1,0 +1,28 @@
+{
+ "challenge": {
+  "id": 2,
+  "spec_digest": "sha256:e44f86d7af72f8678888754314177c52148ffd0b8a1ea61d7beb6824578693a0",
+  "status": "refunded",
+  "network": "monad-testnet",
+  "chain_id": 10143,
+  "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+  "onchain_id": "2",
+  "fund_tx": "0x1b6e26a29cd7f0bf1d4587ce2acb8e3b89273027c7a99e603c910eb02df8c924",
+  "reward_wei": "5000000000000000",
+  "note": null,
+  "created_at": 1791737942,
+  "updated_at": 1791738613
+ },
+ "attestation": null,
+ "onchain": {
+  "publisher": "0x27d338b0a15d73b7ae74d4bc70c134f67a0275fa",
+  "evaluator": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+  "submission_deadline": 1791738302,
+  "settlement_deadline": 1791738602,
+  "status": "refunded",
+  "reward_wei": "5000000000000000",
+  "spec_digest": "sha256:e44f86d7af72f8678888754314177c52148ffd0b8a1ea61d7beb6824578693a0",
+  "settled_submission": "0x0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "explorer_template": "https://testnet.monadscan.com/tx/{hash}"
+}

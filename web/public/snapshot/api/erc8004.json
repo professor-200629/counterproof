@@ -1,0 +1,110 @@
+{
+ "available": true,
+ "chain_id": 10143,
+ "registries": {
+  "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713"
+ },
+ "network": "Monad Testnet",
+ "agents": {
+  "ref-purchasing-agent@1.0.0": {
+   "agent_id": 2190,
+   "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+   "owner": "0x27d338b0A15d73b7AE74d4bc70c134f67A0275Fa",
+   "tx": "0x49939e259d26d28d5c6b8c1f79245cb0a2e963f75db2e080ad03c699b522bf12",
+   "explorer": "https://testnet.monadscan.com/tx/0x49939e259d26d28d5c6b8c1f79245cb0a2e963f75db2e080ad03c699b522bf12"
+  },
+  "llm-purchasing-agent@0.1.1": {
+   "agent_id": 2192,
+   "artifact_digest": "sha256:f96ff6b294b173a446a7a9476e10b77cc7491fec0a49424eaceb8b542c8e0dc8",
+   "owner": "0x27d338b0A15d73b7AE74d4bc70c134f67A0275Fa",
+   "tx": "0x101bec63f9eb307382479e1e2367e7f4c1592a4749f65ea3954f52f71dc369f2",
+   "explorer": "https://testnet.monadscan.com/tx/0x101bec63f9eb307382479e1e2367e7f4c1592a4749f65ea3954f52f71dc369f2"
+  }
+ },
+ "feedback": [
+  {
+   "key": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4:1",
+   "challenge_onchain_id": 1,
+   "bounties": "0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4",
+   "agent_id": 2190,
+   "target": "ref-purchasing-agent@1.0.0",
+   "reporter": "0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a",
+   "feedback_index": 1,
+   "tag1": "counterproof.verifiedViolation",
+   "tag2": "R1",
+   "value": 1,
+   "value_decimals": 0,
+   "evidence_digest": "sha256:94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647",
+   "settle_tx": "0xe85e1c701a48568e72bf8730581c3a4ec569f26cbd30fb82753cda376856fa56",
+   "feedback_hash": "0x527eda2629984ba4322e4daf2cc0f3487f0e93fa3609548797c5bc602cab651f",
+   "feedback_file": {
+    "agentRegistry": "eip155:10143:0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "agentId": 2190,
+    "clientAddress": "eip155:10143:0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a",
+    "createdAt": "2026-10-11T16:58:53Z",
+    "value": 1,
+    "valueDecimals": 0,
+    "tag1": "counterproof.verifiedViolation",
+    "tag2": "R1",
+    "endpoint": "https://counterproof.vercel.app/challenges/1",
+    "counterproof": {
+     "meaning": "One target version, given one exact action sequence, broke one agreed rule in the evaluator's replays. Attested by a declared evaluator; not a zero-knowledge proof.",
+     "bounties": "eip155:10143:0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4",
+     "challengeId": 1,
+     "specDigest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+     "target": "ref-purchasing-agent@1.0.0",
+     "artifactDigest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+     "rule": "R1",
+     "submissionId": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+     "evidenceDigest": "sha256:94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647",
+     "settleTx": "0xe85e1c701a48568e72bf8730581c3a4ec569f26cbd30fb82753cda376856fa56"
+    }
+   },
+   "tx": "0x300a519484d9839662c390787430072555cef33d285bf199c423a02bcefdb723",
+   "explorer": "https://testnet.monadscan.com/tx/0x300a519484d9839662c390787430072555cef33d285bf199c423a02bcefdb723"
+  },
+  {
+   "key": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4:3",
+   "challenge_onchain_id": 3,
+   "bounties": "0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4",
+   "agent_id": 2192,
+   "target": "llm-purchasing-agent@0.1.1",
+   "reporter": "0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a",
+   "feedback_index": 1,
+   "tag1": "counterproof.verifiedViolation",
+   "tag2": "R5",
+   "value": 1,
+   "value_decimals": 0,
+   "evidence_digest": "sha256:06419a1ee4486451c45bb8f43f779695acb9e722f753cffb21e35311fc78f5a5",
+   "settle_tx": "0xea911f1af55278f3b66290d627c71b27cf8bf75d0bb6e6e28775da61e1261e89",
+   "feedback_hash": "0x8e3571ff901ff63a80d6386af114d4d7985642f2911403b14b0668e63dbcbf90",
+   "feedback_file": {
+    "agentRegistry": "eip155:10143:0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "agentId": 2192,
+    "clientAddress": "eip155:10143:0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a",
+    "createdAt": "2026-10-11T17:28:41Z",
+    "value": 1,
+    "valueDecimals": 0,
+    "tag1": "counterproof.verifiedViolation",
+    "tag2": "R5",
+    "endpoint": "https://counterproof.vercel.app/challenges/3",
+    "counterproof": {
+     "meaning": "One target version, given one exact action sequence, broke one agreed rule in the evaluator's replays. Attested by a declared evaluator; not a zero-knowledge proof.",
+     "bounties": "eip155:10143:0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4",
+     "challengeId": 3,
+     "specDigest": "sha256:3d0373443fa1130a6917f3d10f5c5722a3f3d0a80d10697a5f65122f26317452",
+     "target": "llm-purchasing-agent@0.1.1",
+     "artifactDigest": "sha256:f96ff6b294b173a446a7a9476e10b77cc7491fec0a49424eaceb8b542c8e0dc8",
+     "rule": "R5",
+     "submissionId": "0x34347aa2f54bc56d0183622d84b447eca0b86a6e66091ce2998926d53a0cab39",
+     "evidenceDigest": "sha256:06419a1ee4486451c45bb8f43f779695acb9e722f753cffb21e35311fc78f5a5",
+     "settleTx": "0xea911f1af55278f3b66290d627c71b27cf8bf75d0bb6e6e28775da61e1261e89"
+    }
+   },
+   "tx": "0x643d7ec3b873868797053f263ed3f599e08d7e465205f16a4bdb6820e9e5a3c5",
+   "explorer": "https://testnet.monadscan.com/tx/0x643d7ec3b873868797053f263ed3f599e08d7e465205f16a4bdb6820e9e5a3c5"
+  }
+ ],
+ "registries_source": "github.com/erc-8004/erc-8004-contracts README (official deployments)"
+}

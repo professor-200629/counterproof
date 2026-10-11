@@ -1,0 +1,230 @@
+{
+ "id": "run_dfcd8a9e33c449b4",
+ "challenge_id": 2,
+ "job_id": "job_6435747e5dfe4d06",
+ "strategy": "sequence-explorer",
+ "strategy_version": "1.0.0",
+ "mode": "deterministic",
+ "params": {
+  "seed": 7,
+  "max_length": 4
+ },
+ "budget": {
+  "max_sequences": 150,
+  "max_wall_seconds": 90
+ },
+ "status": "no_violation_found",
+ "record": {
+  "strategy": "sequence-explorer",
+  "strategy_version": "1.0.0",
+  "params": {
+   "seed": 7,
+   "max_length": 4
+  },
+  "budget": {
+   "max_sequences": 150,
+   "max_wall_seconds": 90,
+   "max_model_calls": 0,
+   "max_model_tokens": 0,
+   "max_cost_usd_micros": 0,
+   "shrink": true
+  },
+  "sequences_tried": 150,
+  "tool_calls": 1370,
+  "model_calls": 0,
+  "model_tokens": 0,
+  "candidates": [],
+  "errors": [],
+  "run_outcomes": {
+   "completed": 150
+  },
+  "samples": [
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-MONITOR-27",
+      "qty": 3
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-MONITOR-27",
+      "qty": 2
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-GIFTCARD-100",
+      "qty": 3
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-GIFTCARD-100",
+      "qty": 2
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-TONER-K",
+      "qty": 3
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-MONITOR-27",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-TONER-K",
+      "qty": 2
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-DESK-LAMP",
+      "qty": 3
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-GIFTCARD-100",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-DESK-LAMP",
+      "qty": 2
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-TONER-K",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-HDMI-2M",
+      "qty": 3
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   }
+  ],
+  "termination": "sequence budget exhausted",
+  "started_at": 1791737948.769324,
+  "finished_at": 1791737949.030517,
+  "rules_violated": [],
+  "duration_ms": 261,
+  "provenance": {
+   "strategy": "sequence-explorer",
+   "mode": "deterministic",
+   "target_determinism": "deterministic",
+   "inference": "none (deterministic)"
+  },
+  "candidate_ids": []
+ },
+ "provenance": {
+  "strategy": "sequence-explorer",
+  "mode": "deterministic",
+  "target_determinism": "deterministic",
+  "inference": "none (deterministic)"
+ },
+ "error": null,
+ "created_at": 1791737948,
+ "updated_at": 1791737949,
+ "job": {
+  "id": "job_6435747e5dfe4d06",
+  "kind": "search",
+  "status": "done",
+  "params": {
+   "run_id": "run_dfcd8a9e33c449b4"
+  },
+  "result": {
+   "status": "no_violation_found",
+   "candidates": []
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "Professor04:14300",
+  "heartbeat_at": 1791737949,
+  "created_at": 1791737948,
+  "started_at": 1791737948,
+  "finished_at": 1791737949
+ }
+}

@@ -1,30 +1,30 @@
 {
  "version": "0.1.0",
- "network": "anvil-local",
- "network_label": "Local anvil chain (31337) - not Monad testnet",
+ "network": "monad-testnet",
+ "network_label": "Monad Testnet (10143)",
  "chain": {
-  "network": "anvil-local",
-  "label": "Local anvil chain (31337) - not Monad testnet",
-  "chain_id": 31337,
-  "contract": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-  "rpc": "http://127.0.0.1:8545",
+  "network": "monad-testnet",
+  "label": "Monad Testnet (10143)",
+  "chain_id": 10143,
+  "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+  "rpc": "https://testnet-rpc.monad.xyz",
   "reachable": true,
-  "explorer_tx_url": null,
-  "rpc_chain_id": 31337,
-  "block": 14,
+  "explorer_tx_url": "https://testnet.monadscan.com/tx/{hash}",
+  "rpc_chain_id": 10143,
+  "block": 70171323,
   "chain_id_matches": true,
   "contract_has_code": true
  },
- "evaluator_address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+ "evaluator_address": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
  "signer": {
   "url": "http://127.0.0.1:8011",
   "reachable": true,
   "configured": true,
-  "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+  "address": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b"
  },
  "challenger_bot": {
-  "address": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
-  "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "address": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+  "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
   "can_commit": true
  },
  "isolation": {

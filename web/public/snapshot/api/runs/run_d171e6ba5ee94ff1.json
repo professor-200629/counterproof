@@ -1,0 +1,384 @@
+{
+ "id": "run_d171e6ba5ee94ff1",
+ "challenge_id": 1,
+ "job_id": "job_44f4e7e2bea541b5",
+ "strategy": "retry-replay",
+ "strategy_version": "1.0.0",
+ "mode": "deterministic",
+ "params": {},
+ "budget": {
+  "max_sequences": 150,
+  "max_wall_seconds": 90
+ },
+ "status": "candidate_found",
+ "record": {
+  "strategy": "retry-replay",
+  "strategy_version": "1.0.0",
+  "params": {},
+  "budget": {
+   "max_sequences": 150,
+   "max_wall_seconds": 90,
+   "max_model_calls": 0,
+   "max_model_tokens": 0,
+   "max_cost_usd_micros": 0,
+   "shrink": true
+  },
+  "sequences_tried": 27,
+  "tool_calls": 160,
+  "model_calls": 0,
+  "model_tokens": 0,
+  "candidates": [
+   {
+    "candidate": {
+     "format": "counterproof.candidate/v1",
+     "challenge_spec_digest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+     "challenger": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+     "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+     "claimed_rule": "R3",
+     "actions": [
+      {
+       "type": "user_request",
+       "request_id": "dup-1",
+       "sku": "SKU-PAPER-500",
+       "qty": 1
+      },
+      {
+       "type": "user_request",
+       "request_id": "dup-1",
+       "sku": "SKU-PAPER-500",
+       "qty": 1
+      }
+     ],
+     "salt": "0x9bce8fc52862e2aac775e521110b15a16f1b8692d3be211e58bd80248ca1e820",
+     "provenance": {
+      "strategy": "retry-replay",
+      "strategy_version": "1.0.0",
+      "run_id": "run_d171e6ba5ee94ff1",
+      "model": null,
+      "note": "shrunk from 2 to 2 actions"
+     }
+    },
+    "digest": "sha256:94d8d17ab2e917bc84f0c86c2fc748fbb523006dcd33330dbf9ed30ae4588841",
+    "local_check": {
+     "rule_id": "R3",
+     "summary": "Order ord-0001 was paid 2 times (2400 SYN in total).",
+     "observed": {
+      "orders": {
+       "ord-0001": [
+        {
+         "seq": 4,
+         "payment_id": "pay-0001",
+         "order_id": "ord-0001",
+         "merchant": "m_acme",
+         "amount": 1200,
+         "idempotency_key": null
+        },
+        {
+         "seq": 7,
+         "payment_id": "pay-0002",
+         "order_id": "ord-0001",
+         "merchant": "m_acme",
+         "amount": 1200,
+         "idempotency_key": null
+        }
+       ]
+      }
+     },
+     "note": "challenger-side self-check only; not evidence until the evaluator replays it"
+    }
+   }
+  ],
+  "errors": [],
+  "run_outcomes": {
+   "completed": 30
+  },
+  "samples": [
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "dup-1",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_after_commit",
+      "count": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_after_commit",
+      "count": 2
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "delayed_response",
+      "count": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "delayed_response",
+      "count": 2
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_before_commit",
+      "count": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_before_commit",
+      "count": 2
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "re-1",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     },
+     {
+      "type": "revoke_mandate"
+     },
+     {
+      "type": "user_request",
+      "request_id": "re-1",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "re-2",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     },
+     {
+      "type": "revoke_mandate"
+     },
+     {
+      "type": "user_request",
+      "request_id": "re-3",
+      "sku": "SKU-PAPER-500",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": []
+   },
+   {
+    "actions": [
+     {
+      "type": "user_request",
+      "request_id": "dup-1",
+      "sku": "SKU-HDMI-2M",
+      "qty": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "dup-1",
+      "sku": "SKU-HDMI-2M",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_after_commit",
+      "count": 1
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-HDMI-2M",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   },
+   {
+    "actions": [
+     {
+      "type": "network_fault",
+      "op": "pay",
+      "fault": "timeout_after_commit",
+      "count": 2
+     },
+     {
+      "type": "user_request",
+      "request_id": "req-0",
+      "sku": "SKU-HDMI-2M",
+      "qty": 1
+     }
+    ],
+    "outcome": "completed",
+    "violated": [
+     "R3"
+    ]
+   }
+  ],
+  "termination": "search space exhausted",
+  "started_at": 1791737910.9588292,
+  "finished_at": 1791737911.0880275,
+  "rules_violated": [
+   "R3"
+  ],
+  "duration_ms": 129,
+  "provenance": {
+   "strategy": "retry-replay",
+   "mode": "deterministic",
+   "target_determinism": "deterministic",
+   "inference": "none (deterministic)"
+  },
+  "candidate_ids": [
+   "cand_db434f6c90f14999"
+  ]
+ },
+ "provenance": {
+  "strategy": "retry-replay",
+  "mode": "deterministic",
+  "target_determinism": "deterministic",
+  "inference": "none (deterministic)"
+ },
+ "error": null,
+ "created_at": 1791737910,
+ "updated_at": 1791737911,
+ "job": {
+  "id": "job_44f4e7e2bea541b5",
+  "kind": "search",
+  "status": "done",
+  "params": {
+   "run_id": "run_d171e6ba5ee94ff1"
+  },
+  "result": {
+   "status": "candidate_found",
+   "candidates": [
+    "cand_db434f6c90f14999"
+   ]
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "Professor04:14300",
+  "heartbeat_at": 1791737911,
+  "created_at": 1791737910,
+  "started_at": 1791737910,
+  "finished_at": 1791737911
+ }
+}

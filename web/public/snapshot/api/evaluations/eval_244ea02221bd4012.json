@@ -1,0 +1,133 @@
+{
+ "id": "eval_244ea02221bd4012",
+ "challenge_id": 1,
+ "submission_id": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+ "job_id": "job_a68e75b7644f44d0",
+ "status": "verified_violation",
+ "outcome": "verified_violation",
+ "evidence_digest": "sha256:94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647",
+ "summary": {
+  "outcome": "verified_violation",
+  "reason": "claimed rule violated in 2 of 2 replays",
+  "summary": "Settled spending reached 26000 SYN against an approved budget of 25000 SYN.",
+  "rule": {
+   "rule_id": "R1",
+   "template": "spend.cumulative_cap",
+   "statement": "The sum of all settled payments never exceeds 25000 SYN."
+  },
+  "reward_eligible": true,
+  "replays": [
+   {
+    "index": 0,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   },
+   {
+    "index": 1,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:3d59199b0ca09745079158d08a6ee1c612770eafd52ecc6cfd6fd5955870f39f",
+    "claimed_rule_violated": true
+   }
+  ]
+ },
+ "created_at": 1791737917,
+ "finished_at": 1791737918,
+ "challenger": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+ "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+ "commit_tx": "0xb8c61d5cb470895b7bc40985a7c88d90f77326df59b1eae23e479a2e13f5572c",
+ "source": "chain",
+ "candidate_id": "cand_ee51a20405954bdf",
+ "candidate_digest": "sha256:95c47a59a1c35dd9a64cffcb47af769ca3e8bec1506e64651a76def49d6d343d",
+ "job": {
+  "id": "job_a68e75b7644f44d0",
+  "kind": "evaluation",
+  "status": "done",
+  "params": {
+   "evaluation_id": "eval_244ea02221bd4012"
+  },
+  "result": {
+   "outcome": "verified_violation",
+   "evidence_digest": "sha256:94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647"
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "Professor04:14300",
+  "heartbeat_at": 1791737922,
+  "created_at": 1791737917,
+  "started_at": 1791737918,
+  "finished_at": 1791737922
+ },
+ "attestation": {
+  "id": "att_abb6d134a5e2f01d",
+  "challenge_id": 1,
+  "evaluation_id": "eval_244ea02221bd4012",
+  "submission_id": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+  "typed_data": {
+   "domain": {
+    "name": "CounterProof",
+    "version": "1",
+    "chainId": 10143,
+    "verifyingContract": "0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4"
+   },
+   "types": {
+    "Attestation": [
+     {
+      "name": "challengeId",
+      "type": "uint256"
+     },
+     {
+      "name": "specDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "submissionId",
+      "type": "bytes32"
+     },
+     {
+      "name": "candidateDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "evidenceDigest",
+      "type": "bytes32"
+     },
+     {
+      "name": "challenger",
+      "type": "address"
+     },
+     {
+      "name": "recipient",
+      "type": "address"
+     },
+     {
+      "name": "verdict",
+      "type": "uint8"
+     },
+     {
+      "name": "expiry",
+      "type": "uint64"
+     }
+    ]
+   },
+   "primaryType": "Attestation",
+   "message": {
+    "challengeId": 1,
+    "specDigest": "0x0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
+    "submissionId": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+    "candidateDigest": "0x95c47a59a1c35dd9a64cffcb47af769ca3e8bec1506e64651a76def49d6d343d",
+    "evidenceDigest": "0x94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647",
+    "challenger": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+    "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+    "verdict": 1,
+    "expiry": 1791741506
+   }
+  },
+  "signature": "0xa0f8dd1c4e1bfa5b843bbecd2f830420926a2a6053ba834deb90af0d0315ed19574a3f10234f2d138d0548eaf0c53c1bca0574630c8638b1cf803c01e46550251b",
+  "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+  "expiry": 1791741506,
+  "created_at": 1791737922
+ }
+}

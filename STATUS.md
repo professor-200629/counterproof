@@ -6,12 +6,30 @@ submission._
 
 ## Current stage
 
-Everything runs end to end on a local anvil chain and, since 2026-10-11, on a **local fork of
-Monad testnet** (real ERC-8004 registries, chain id 10143, no real transactions). The real
-Monad testnet run is waiting only for testnet MON on the deployer
-(`0x3893A16a140969702F88C1DCa98CA5a1Cc27554B`, about 1.5 MON). Source is public at
-https://github.com/professor-200629/counterproof; the read-only console is at
-https://counterproof.vercel.app (recorded local-anvil snapshot until the testnet run).
+**Live on Monad testnet since 2026-10-11.** Contract
+[`0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4`](https://testnet.monadscan.com/address/0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4)
+(source verified on Sourcify: runtime match), three challenges run end to end on testnet,
+including a **verified violation by the independent live-model agent** that was settled and
+recorded in the official ERC-8004 ReputationRegistry. Source:
+https://github.com/professor-200629/counterproof. Read-only console with the recorded testnet
+run: https://counterproof.vercel.app.
+
+## Monad testnet run (2026-10-11)
+
+Reports: `docs/evidence/testnet-e2e-20261011-222815.json` (pass) and
+`docs/evidence/testnet-llm-20261011-224056.json`; deployments and ERC-8004 records in
+`docs/deployments/`.
+
+| Challenge | Target | What happened on testnet |
+|---|---|---|
+| #1 | `ref-purchasing-agent@1.0.0` (intentionally vulnerable fixture), ERC-8004 agent 2190 | 3 strategies; R1 candidate committed; verified 2 of 2 (deterministic); attested; [settled](https://testnet.monadscan.com/tx/0xe85e1c701a48568e72bf8730581c3a4ec569f26cbd30fb82753cda376856fa56) by a relayer; [ERC-8004 feedback R1](https://testnet.monadscan.com/tx/0x300a519484d9839662c390787430072555cef33d285bf199c423a02bcefdb723); [withdrawn](https://testnet.monadscan.com/tx/0x1679690a4eb8e197d0da493d0f8e2c95c578f4aad11df580ad9bf8b757bf883a); same sequence on 1.1.0: not reproduced |
+| #2 | `ref-purchasing-agent@1.1.0` (repaired) | 3 strategies, no violation found within budget (150 / 27 / 30 sequences); [refunded](https://testnet.monadscan.com/tx/0x3c5472ef8560e71543ded85d230ac096d06e949232bef47dd1b8f103635f1eff) after the settlement window |
+| #3 | `llm-purchasing-agent@0.1.1` on `openai/gpt-oss-120b` (independent, live model), ERC-8004 agent 2192 | merchant-content search found an R5 candidate itself (6 sequences, 46,980 tokens); [committed](https://testnet.monadscan.com/tx/0xdbf0207722a5c6c1b5ed3732b86123d2c9ec2bf16bb2905b2a1e727e1c123c3e); **verified 3 of 3** fresh replays (stochastic, 2 of 3 required); [settled](https://testnet.monadscan.com/tx/0xea911f1af55278f3b66290d627c71b27cf8bf75d0bb6e6e28775da61e1261e89); [ERC-8004 feedback R5](https://testnet.monadscan.com/tx/0x643d7ec3b873868797053f263ed3f599e08d7e465205f16a4bdb6820e9e5a3c5); [withdrawn](https://testnet.monadscan.com/tx/0xf8959634cb0d4908dd098c7006b23a6afbbf069af5c37ea530496c19e50defe5) |
+
+Read back independently from the registries: `readFeedback(2190, reporter, 1)` =
+`(1, 0, counterproof.verifiedViolation, R1, false)`; the feedback hash equals keccak256 of the
+recorded feedback file. Costs: deploy ~0.12 MON; most of the 5 MON provided is still held by
+the role accounts.
 
 ## Added 2026-10-11: ERC-8004 agent identity and reputation
 
@@ -54,9 +72,9 @@ since); web unit tests **107 passed**.
 
 ## Hosted read-only console
 
-https://counterproof.vercel.app (Vercel project `counterproof`, deployed 2026-10-07 with the owner's
-approval). It shows a recorded snapshot (challenges 6, 8, 9 of 9; local anvil, labelled "not Monad")
-and runs nothing live. Verified: all routes and assets return 200 from Vercel; the identical build
+https://counterproof.vercel.app (Vercel project `counterproof`, first deployed 2026-10-07 with the
+owner's approval; since 2026-10-11 it shows the recorded **Monad testnet** run: challenges 1-3 of 3,
+contract `0xe377…b5e4`). It runs nothing live; credits are read live from the public testnet RPC. Verified: all routes and assets return 200 from Vercel; the identical build
 rendered fully at localhost with no backend running. The in-app browser blocks Vercel's script
 assets, so the hosted page itself was not watched rendering - open it in a normal browser to confirm.
 Redeploy: `scripts/export_snapshot.py --challenges ...` then
@@ -110,18 +128,14 @@ model's daily quota ran out before they could be replayed.
 
 ## Not yet verified
 
-- **Monad testnet**: no testnet transaction exists yet. Deployer
-  `0x3893A16a140969702F88C1DCa98CA5a1Cc27554B` needs ~1.5 testnet MON. Everything up to that
-  point has run on a fork of Monad testnet.
-- **10 MON reserve rule**: neither anvil nor the fork enforces it; only testnet can confirm
-  (scripts space value-sending transactions so they qualify as "emptying").
+- **10 MON reserve rule**: value-sending transactions from accounts holding < 10 MON succeeded on
+  testnet when spaced as "emptying" transactions; the revert path itself was never triggered.
 - **Container isolation**: implemented, untested (Docker engine does not start here).
 - **Web console on Monad testnet** with a real browser wallet (verified on local anvil with the dev wallet).
 
 ## Next tasks
 
-1. Testnet (needs MON): `testnet.py fund-roles`, `deploy`, `verify`, `e2e_testnet.py`
-   (includes ERC-8004 identity + feedback), then `dev.py testnet --data <run dir>` and
-   `export_snapshot.py`, redeploy the console with the testnet snapshot.
-2. Final local e2e on the final code.
-3. Demo video (<= 3 min), pitch video (<= 2 min), submission text (docs/SUBMISSION.md).
+1. Demo video (<= 3 min) and pitch video (<= 2 min) - the owner records them
+   (docs/DEMO_SCRIPT.md, docs/PITCH.md).
+2. Submission on the hackathon platform (owner): docs/SUBMISSION.md has the text and links.
+3. Optional: the browser-wallet flow on testnet (`dev.py testnet --data data/e2e-testnet-20261011-222815`).
