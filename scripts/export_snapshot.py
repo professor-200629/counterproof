@@ -54,6 +54,8 @@ def main() -> int:
         c.get("/api/health").raise_for_status()
     except httpx.HTTPError as e:
         raise SystemExit(f"evaluator API not reachable at {API} ({type(e).__name__}); the existing snapshot was left untouched")
+    if "REHEARSAL" in c.get("/api/config").json().get("network_label", ""):
+        raise SystemExit("refusing to export a fork rehearsal: it is not Monad testnet data; the existing snapshot was left untouched")
     if OUT.exists():
         shutil.rmtree(OUT)
     saved: list[str] = []
@@ -78,7 +80,7 @@ def main() -> int:
     if "--challenges" in sys.argv:
         only = {int(x) for x in sys.argv[sys.argv.index("--challenges") + 1].split(",")}
     cfg = get("/api/config")
-    for p in ("/api/targets", "/api/rule-templates", "/api/strategies"):
+    for p in ("/api/targets", "/api/rule-templates", "/api/strategies", "/api/erc8004"):
         get(p)
     all_challenges = c.get("/api/challenges").json()
     chosen = [ch for ch in all_challenges if only is None or ch["id"] in only]

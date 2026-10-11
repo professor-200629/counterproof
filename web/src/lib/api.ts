@@ -983,10 +983,54 @@ async function snapshotRequest<T>(path: string, opts: RequestOptions): Promise<T
 
 const enc = encodeURIComponent;
 
+// ---------------------------------------------------------------------------- ERC-8004
+/** An ERC-8004 identity the publisher registered for a CounterProof target (GET /api/erc8004). */
+export interface Erc8004Agent {
+  agent_id: number;
+  /** The artifact digest the agent's own registration file declares. */
+  artifact_digest: Digest;
+  owner: string;
+  tx: string;
+  explorer: string;
+}
+
+/** One feedback entry the reporter posted to the official ReputationRegistry. */
+export interface Erc8004Feedback {
+  key: string;
+  challenge_onchain_id: number;
+  bounties: string;
+  agent_id: number;
+  target: string;
+  reporter: string;
+  feedback_index: number;
+  tag1: string;
+  tag2: string;
+  value: number;
+  value_decimals: number;
+  evidence_digest: Digest;
+  settle_tx: string;
+  feedback_hash: string;
+  feedback_file: JsonObject;
+  tx: string;
+  explorer: string;
+}
+
+export interface Erc8004Record {
+  available: boolean;
+  reason?: string;
+  chain_id: number | null;
+  registries: { identity: string; reputation: string } | null;
+  network?: string;
+  agents?: Record<string, Erc8004Agent>;
+  feedback?: Erc8004Feedback[];
+  registries_source?: string;
+}
+
 // ---------------------------------------------------------------------------- endpoints
 export const api = {
   health: () => apiRequest<{ ok: boolean; version: string; time: UnixSeconds }>("/health"),
   getConfig: () => apiRequest<AppConfig>("/config"),
+  getErc8004: () => apiRequest<Erc8004Record>("/erc8004"),
   getTargets: () => apiRequest<Target[]>("/targets"),
   getRuleTemplates: () => apiRequest<RuleTemplate[]>("/rule-templates"),
   getStrategies: () => apiRequest<Strategy[]>("/strategies"),

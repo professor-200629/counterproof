@@ -108,5 +108,9 @@ def settings() -> Settings:
     )
 
 
+REHEARSAL_SUFFIX = " - FORK REHEARSAL (local anvil fork, not Monad testnet)"
+
+
 def network_label() -> str:
-    return NETWORKS[settings().network]["label"]
+    label = NETWORKS[settings().network]["label"]
+    return label + REHEARSAL_SUFFIX if os.environ.get("COUNTERPROOF_FORK_REHEARSAL") == "1" else label

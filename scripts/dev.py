@@ -5,6 +5,9 @@
                                    Uses anvil's public dev keys; the web app offers the
                                    labelled "Local dev account" wallet. NOT Monad.
   python scripts/dev.py testnet    Monad Testnet (10143) with keys and contract from .env.
+                                   --data DIR serves another data directory (e.g. an
+                                   e2e_testnet.py run); with COUNTERPROOF_FORK_REHEARSAL=1 it
+                                   runs against the local fork rehearsal, labelled as such.
   python scripts/dev.py offchain   no chain: evidence only, no rewards.
   add --no-web to skip the Next.js dev server; --workers N (default 2) runs N job workers
   so a slow live-model run does not block other jobs (claiming a job is atomic).
@@ -90,13 +93,24 @@ def main() -> int:
         roles["api"]["COUNTERPROOF_CHALLENGER_PRIVATE_KEY"] = K["challenger"]
         web_env = {"NEXT_PUBLIC_DEV_WALLET": "1"}
     elif mode == "testnet":
+        # COUNTERPROOF_FORK_REHEARSAL=1: against the local anvil fork used by scripts/testnet.py
+        # (contract from its overlay; every page is labelled as a rehearsal).
+        rehearsal = os.environ.get("COUNTERPROOF_FORK_REHEARSAL") == "1"
+        if rehearsal:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import testnet as tn
+
+            env_file = {k: v for k, v in tn.env().items() if v}
         need = ("COUNTERPROOF_CONTRACT", "EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_EVALUATOR_ADDRESS")
         missing = [k for k in need if k not in env_file]
         if missing:
             raise SystemExit(f"missing in .env: {missing} (run scripts/keygen.py and scripts/testnet.py deploy)")
-        data = ROOT / "data" / "testnet"
+        # --data DIR serves another data directory, e.g. the one an e2e_testnet.py run wrote
+        data = Path(sys.argv[sys.argv.index("--data") + 1]).resolve() if "--data" in sys.argv else ROOT / "data" / "testnet"
         common = {"COUNTERPROOF_NETWORK": "monad-testnet", "COUNTERPROOF_CONTRACT": env_file["COUNTERPROOF_CONTRACT"],
                   "COUNTERPROOF_DATA_DIR": str(data), "COUNTERPROOF_EVALUATOR_ADDRESS": env_file["COUNTERPROOF_EVALUATOR_ADDRESS"]}
+        if rehearsal:
+            common |= {"COUNTERPROOF_RPC_URL": tn.RPC, "COUNTERPROOF_ERC8004_RECORD": str(tn.ERC8004_RECORD)}
         roles["signer"]["EVALUATOR_PRIVATE_KEY"] = env_file["EVALUATOR_PRIVATE_KEY"]
         if "COUNTERPROOF_CHALLENGER_PRIVATE_KEY" in env_file:
             roles["api"]["COUNTERPROOF_CHALLENGER_PRIVATE_KEY"] = env_file["COUNTERPROOF_CHALLENGER_PRIVATE_KEY"]

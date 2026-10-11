@@ -22,6 +22,7 @@ export const POLL_MS = 1500;
 /** Query keys. Everything about one challenge lives under ["challenge", id]. */
 export const qk = {
   config: ["config"] as const,
+  erc8004: ["erc8004"] as const,
   targets: ["targets"] as const,
   ruleTemplates: ["rule-templates"] as const,
   strategies: ["strategies"] as const,
@@ -78,6 +79,11 @@ export function pollIf(poll: boolean | undefined): number | false {
 /** Backend configuration: network, chain, evaluator, signer, isolation, providers. */
 export function useConfig(opts: QueryOpts = {}) {
   return useQuery({ queryKey: qk.config, queryFn: api.getConfig, staleTime: 30_000, enabled: opts.enabled ?? true });
+}
+
+/** ERC-8004 identities and feedback recorded for this backend's contract (Monad testnet only). */
+export function useErc8004(opts: QueryOpts = {}) {
+  return useQuery({ queryKey: qk.erc8004, queryFn: api.getErc8004, staleTime: 30_000, enabled: opts.enabled ?? true });
 }
 
 export function useTargets(opts: QueryOpts = {}) {

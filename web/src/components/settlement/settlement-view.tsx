@@ -35,6 +35,7 @@ import { isChallengeActive, isEvaluationActive } from "@/lib/status";
 import { supportedChainIdFor } from "@/lib/wagmi";
 import { RefundAction, SettleAction, WithdrawAction, type ChainTarget } from "./actions";
 import { AttestationDetails } from "./attestation-details";
+import { Erc8004Panel } from "./erc8004-panel";
 import {
   commitTxFor,
   confirmedTx,
@@ -180,6 +181,8 @@ function OnchainSettlement({ view, settlement, config }: OnchainProps) {
           <WithdrawStep view={view} settlement={settlement} attestation={attestation} target={target} settledTx={settledTx} refundTx={refundTx} />
         </Timeline>
       </Section>
+
+      <Erc8004Panel view={view} />
 
       {view.status === "funded" || view.status === "refunded" || txsOfKind(view.transactions, "refund").length > 0 ? (
         <Section

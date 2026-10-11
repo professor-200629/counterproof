@@ -106,6 +106,33 @@ def config() -> dict:
     }
 
 
+@app.get("/api/erc8004")
+def erc8004_record() -> dict:
+    """The ERC-8004 identities and feedback recorded by scripts/testnet.py (public chain facts only).
+    Only feedback about this backend's contract is returned."""
+    import os
+    from pathlib import Path
+
+    from . import erc8004
+    from .config import ROOT
+
+    s = settings()
+    regs = erc8004.REGISTRIES.get(s.chain_id or 0)
+    default = ROOT / "docs" / "deployments" / "monad-testnet-erc8004.json" if s.network == "monad-testnet" else None
+    path = Path(os.environ["COUNTERPROOF_ERC8004_RECORD"]) if os.environ.get("COUNTERPROOF_ERC8004_RECORD") else default
+    base = {"available": False, "chain_id": s.chain_id, "registries": regs}
+    if not regs:
+        return base | {"reason": f"no official ERC-8004 registries are recorded for {network_label()}"}
+    if not path or not path.exists():
+        return base | {"reason": "no ERC-8004 identities registered yet (scripts/testnet.py register-agents)"}
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    if rec.get("chain_id") != s.chain_id:
+        return base | {"reason": "the ERC-8004 record is for a different chain"}
+    feedback = [f for f in rec.get("feedback", []) if s.contract and f.get("bounties", "").lower() == s.contract]
+    return base | {"available": True, "network": rec.get("network"), "agents": rec.get("agents", {}),
+                   "feedback": feedback, "registries_source": rec.get("registries_source")}
+
+
 @app.get("/api/targets")
 def targets() -> list[dict]:
     return registry.catalogue()
