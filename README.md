@@ -44,7 +44,7 @@ merchants, products, balances and orders — no real shops, accounts or money).
 |---|---|---|
 | `ref-purchasing-agent@1.0.0` | **Intentionally vulnerable fixture** | Two planted defects: per-purchase (not cumulative) budget check; no idempotency on payment retries. Findings against it demonstrate the pipeline; they are not discoveries. |
 | `ref-purchasing-agent@1.1.0` | Repaired fixture | Both defects fixed. |
-| `llm-purchasing-agent@0.1.0` | Independent implementation (live model) | Conventional tool-calling agent; behaviour comes from a hosted model through the evaluator's broker. Results are statistical (k-of-n replays). |
+| `llm-purchasing-agent@0.1.1` | Independent implementation (live model) | Conventional tool-calling agent; behaviour comes from a hosted model through the evaluator's broker. Results are statistical (k-of-n replays). |
 
 ## Quick start (Windows, local chain)
 
@@ -91,7 +91,7 @@ reverts if the sender would end below a 10 MON reserve (unless it is an "emptyin
 transaction).
 
 ```bash
-backend/.venv/Scripts/python scripts/keygen.py            # dedicated testnet keys -> .env (addresses printed)
+backend/.venv/Scripts/python scripts/keygen.py            # dedicated testnet keys -> .env (addresses printed; never overwrites)
 # fund the deployer address from https://faucet.monad.xyz
 backend/.venv/Scripts/python scripts/testnet.py fund-roles
 backend/.venv/Scripts/python scripts/testnet.py deploy
@@ -99,6 +99,32 @@ backend/.venv/Scripts/python scripts/testnet.py verify
 backend/.venv/Scripts/python scripts/e2e_testnet.py       # full flow with Monadscan links
 backend/.venv/Scripts/python scripts/dev.py testnet       # the app against testnet
 ```
+
+### ERC-8004 agent identity and reputation
+
+The reference agents are registered in the official ERC-8004 IdentityRegistry on Monad
+testnet by the publisher, each declaring its exact code digest. When a challenge settles, a
+separate reporter key posts `counterproof.verifiedViolation` feedback (tag2 = rule id) to the
+official ReputationRegistry, after re-checking the settlement and evidence on chain. The
+settlement page shows both. Details: [ARCHITECTURE.md](ARCHITECTURE.md#erc-8004-trustless-agents).
+
+```bash
+backend/.venv/Scripts/python scripts/testnet.py register-agents   # e2e_testnet.py also does this
+```
+
+### Rehearsing on a fork first (no MON spent)
+
+```bash
+anvil --fork-url https://testnet-rpc.monad.xyz --network monad --port 8546
+# then, with COUNTERPROOF_FORK_REHEARSAL=1 and COUNTERPROOF_TESTNET_RPC=http://127.0.0.1:8546:
+backend/.venv/Scripts/python scripts/testnet.py fund-roles    # play money on the fork only
+backend/.venv/Scripts/python scripts/testnet.py deploy
+backend/.venv/Scripts/python scripts/e2e_testnet.py
+```
+
+Everything a rehearsal writes stays in `data/fork-rehearsal/` and is labelled as a
+rehearsal; it never touches `.env` or `docs/deployments`, and the snapshot exporter refuses
+to publish it.
 
 ## Live-model mode (optional)
 

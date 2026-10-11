@@ -36,6 +36,31 @@ This document describes the components, the data flow and the trust boundaries.
 | Signer | `signer.py` | Independent re-verification and EIP-712 attestation |
 | Contract | `contracts/src/CounterProofBounties.sol` | Escrow, commitments, signature-checked settlement, pull payouts, refunds |
 | Console | `web/` | Evidence-first UI, wallet flows |
+| ERC-8004 link | `erc8004.py`, `scripts/testnet.py` | Agent identity (publisher) and reputation feedback (reporter) on the official ERC-8004 registries |
+
+### ERC-8004 (Trustless Agents)
+
+CounterProof writes its verified results into the official ERC-8004 registries on Monad
+testnet (IdentityRegistry `0x8004A818…BD9e`, ReputationRegistry `0x8004B663…8713`, from the
+`erc-8004/erc-8004-contracts` README):
+
+1. **Identity.** The publisher registers each reference agent. Its registration file is a
+   `data:` URI stored on chain and declares `counterproof.target` and
+   `counterproof.artifactDigest`: the owner's own statement of which code that agent is.
+2. **Reputation.** After `ChallengeSettled`, a dedicated reporter key (not the evaluator, not
+   the publisher) calls `giveFeedback(agentId, 1, 0, "counterproof.verifiedViolation", <rule>,
+   <console URL>, <feedback file data: URI>, keccak256(file))`. Before sending, it re-checks on
+   chain that the challenge is settled with the funded spec digest, takes the evidence digest
+   from the `ChallengeSettled` event, re-verifies the sealed evidence bundle, and refuses
+   unless the agent's declared artifact digest equals the spec's target digest.
+3. **Reading it.** Anyone can call `readFeedback(agentId, reporter, index)` or
+   `getSummary(agentId, [reporter], "counterproof.verifiedViolation", "")`; the feedback
+   file names the bounties contract, challenge, spec, submission, evidence and settle
+   transaction so every statement can be checked against the chain.
+
+Feedback is a statement by a declared reviewer, which is how ERC-8004 reputation works:
+readers choose which client addresses they trust. CounterProof does not use the ERC-8004
+Validation Registry, which has no official deployment on Monad.
 
 ## Data flow
 

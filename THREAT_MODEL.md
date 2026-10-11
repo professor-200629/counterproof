@@ -45,6 +45,10 @@ process, curious users of the web UI.
 | 18 | LLM decides a payout | Model output only proposes sequences or drives the target's tool calls; outcomes come from the checker | design; model-assisted provenance records digests |
 | 19 | Browser lies about a transaction | API accepts only a hash and reads the receipt/events from the chain | `chain.verify_funding`, `verify_tx` |
 | 20 | Interrupted jobs shown as live | Heartbeats; stale jobs requeued or failed with "interrupted" | `test_interrupted_jobs_are_recovered_after_restart` |
+| 21 | A publisher pins a violation on someone else's ERC-8004 agent | Feedback only for an agent whose own registration file declares the funded target's artifact digest | `test_reporter_refuses_an_agent_that_declares_different_code` (fork) |
+| 22 | Reputation feedback without a real settlement, or with swapped evidence | Reporter reads the challenge status, spec digest and the `ChallengeSettled` evidence digest from chain and re-verifies the bundle | `test_reporter_refuses_self_feedback_and_unsettled_or_tampered_results` (fork) |
+| 23 | Self-review | ERC-8004 forbids feedback from the agent's owner/operator; the reporter is a separate key and checks `isAuthorizedOrOwner` first | same |
+| 24 | A rehearsal mistaken for Monad testnet | Fork rehearsals write only under `data/fork-rehearsal/`, never `.env` or `docs/deployments`; the API labels the network "FORK REHEARSAL"; the snapshot exporter refuses it | `scripts/testnet.py`, `scripts/export_snapshot.py` |
 
 ## Residual risks (accepted for the MVP, stated plainly)
 
@@ -63,5 +67,8 @@ process, curious users of the web UI.
   not mean the agent is safe.
 - **Single machine.** SQLite and local processes; no high availability.
 - **Testnet only.** No mainnet assets; dedicated testnet keys in a git-ignored `.env`.
+- **ERC-8004 feedback is reviewer-attested.** It is as trustworthy as the reporter key and
+  the evaluator behind it; a reader who does not trust the reporter address should ignore it.
+  The agent-to-code binding is the agent owner's own declaration.
 - **Signer token** is a shared secret on localhost; anyone with local access to the
   machine and the `.env` can request attestations (which the signer still re-verifies).

@@ -66,3 +66,21 @@ on the gas limit like Monad, which the local end-to-end run confirmed (fee = lim
 
 ### D16. OpenZeppelin v5.6.1 (audited `latest`), not 5.7.0 (`dev`, unaudited)
 Uses `EIP712`, `ECDSA` (rejects malleable signatures) and `ReentrancyGuardTransient`.
+
+### D17. ERC-8004 through the official registries, posted by a separate reporter (2026-10-11)
+Track 04 of Metropolis names ERC-8004 agent identity and reputation. CounterProof uses the
+official IdentityRegistry and ReputationRegistry on Monad testnet rather than deploying its
+own copies, so its results sit where other ERC-8004 readers look. Considered and rejected:
+calling `giveFeedback` from `settle()` (adds an external call and a new failure mode to the
+payment path, and the contract was already tested and ready to deploy) and posting from the
+evaluator key (the signer is kept free of transaction sending). A reporter key that only
+relays facts it re-checked on chain keeps both boundaries. Feedback is posted only for
+verified violations of the agent that declares the tested artifact; "no violation found"
+is not posted as a positive score.
+
+### D18. Fork rehearsal before spending testnet MON (2026-10-11)
+`anvil --fork-url https://testnet-rpc.monad.xyz` gives the real ERC-8004 registries and
+chain id 10143 with no real transactions. `COUNTERPROOF_FORK_REHEARSAL=1` runs the testnet
+scripts against it, isolated from `.env` and `docs/deployments`. Found this way: the public
+anvil dev addresses carry EIP-7702 delegations on Monad testnet, so an ERC-721 safe mint to
+them reverts; the fork tests clear that code.
