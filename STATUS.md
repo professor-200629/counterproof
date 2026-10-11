@@ -40,7 +40,8 @@ and runs nothing live. Verified: all routes and assets return 200 from Vercel; t
 rendered fully at localhost with no backend running. The in-app browser blocks Vercel's script
 assets, so the hosted page itself was not watched rendering - open it in a normal browser to confirm.
 Redeploy: `scripts/export_snapshot.py --challenges ...` then
-`cd web && npx vercel deploy --prod --yes --build-env NEXT_PUBLIC_SNAPSHOT=1`.
+`cd web && npx vercel deploy --prod --yes --build-env NEXT_PUBLIC_SNAPSHOT=1 --build-env NEXT_PUBLIC_SNAPSHOT_SOURCE_URL=https://github.com/professor-200629/counterproof`.
+Source: https://github.com/professor-200629/counterproof (public since 2026-10-11).
 
 ## Web console — verified in the browser (2026-10-06, local anvil)
 

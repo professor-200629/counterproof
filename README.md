@@ -136,8 +136,8 @@ cd web && NEXT_PUBLIC_SNAPSHOT=1 pnpm build && pnpm start
    variable `NEXT_PUBLIC_SNAPSHOT=1` and no `BACKEND_URL`. Vercel builds from the
    repository, so commit `web/public/snapshot/` first (or deploy from the CLI). A snapshot
    build without `public/snapshot/manifest.json` fails on purpose.
-4. Set `SNAPSHOT_SOURCE_URL` in `web/src/lib/snapshot.ts` to this repository's URL; the
-   banner's "How to run it yourself" link and every read-only note point there.
+4. Set the build-time variable `NEXT_PUBLIC_SNAPSHOT_SOURCE_URL` to this repository's URL
+   (https only); the banner's "How to run it yourself" link and every read-only note point there.
 
 Details: [web/FRONTEND_NOTES.md](web/FRONTEND_NOTES.md), section "Snapshot mode".
 

@@ -12,7 +12,7 @@ weights are only visible after sign-in and were **not** verified.
 - **Name:** CounterProof
 - **Tagline:** Put AI promises to the test.
 - **Primary track:** 04 — Trust, Identity & AI Infrastructure
-- **Repository:** _(to add once pushed — not pushed yet)_
+- **Repository:** https://github.com/professor-200629/counterproof (public)
 - **Live product:** _(to add — contract on Monad Testnet + console; see STATUS.md)_
 
 ## Short description (≤ 280 characters)
