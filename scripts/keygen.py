@@ -7,7 +7,10 @@ These keys are for testnet value only - never send real funds to them.
   deployer    deploys the contract and tops up the other roles (needs testnet MON)
   evaluator   signs attestations inside the signer process (needs no MON)
   challenger  the challenger bot: commits candidates and withdraws rewards (needs a little MON)
-  publisher   scripted publisher for the testnet end-to-end run (needs reward + gas)
+  publisher   scripted publisher for the testnet end-to-end run (needs reward + gas); owns the
+              reference agents' ERC-8004 identities
+  reporter    posts ERC-8004 reputation feedback for settled results (needs a little MON); must
+              never own or operate an agent it reports on
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ ROLES = {
     "EVALUATOR_PRIVATE_KEY": "evaluator",
     "COUNTERPROOF_CHALLENGER_PRIVATE_KEY": "challenger",
     "PUBLISHER_PRIVATE_KEY": "publisher",
+    "REPORTER_PRIVATE_KEY": "reporter",
 }
 
 
@@ -55,7 +59,7 @@ def main() -> None:
     for role, addr in addresses.items():
         print(f"  {role:<11} {addr}")
     print("\nFund the deployer from https://faucet.monad.xyz (Monad Testnet, chain 10143);")
-    print("scripts/testnet.py fund-roles then tops up the challenger and publisher from it.")
+    print("scripts/testnet.py fund-roles then tops up the challenger, publisher and reporter from it.")
 
 
 if __name__ == "__main__":

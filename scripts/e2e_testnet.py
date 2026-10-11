@@ -28,7 +28,7 @@ os.environ["COUNTERPROOF_ROLE"] = "script"
 import e2e_local as base  # noqa: E402
 import testnet  # noqa: E402
 
-EXPLORER = "https://testnet.monadscan.com/tx/{}"
+EXPLORER = testnet.EXPLORER  # labelled "[fork rehearsal ...]" when COUNTERPROOF_FORK_REHEARSAL=1
 REWARD = 10**16  # 0.01 MON (testnet)
 
 
@@ -47,7 +47,8 @@ def main() -> int:
     c = w3.eth.contract(address=w3.to_checksum_address(contract), abi=json.loads(testnet.ARTIFACT.read_text())["abi"])
     stamp = time.strftime("%Y%m%d-%H%M%S")
     data_dir = ROOT / "data" / f"e2e-testnet-{stamp}"
-    report_path = ROOT / "docs" / "evidence" / f"testnet-e2e-{stamp}.json"
+    report_path = (testnet.OUT_DIR / f"fork-rehearsal-e2e-{stamp}.json" if testnet.REHEARSAL
+                   else ROOT / "docs" / "evidence" / f"testnet-e2e-{stamp}.json")
     log = base.LOG
     ok = False
     s = base.Stack(testnet.RPC, contract.lower(), data_dir, network="monad-testnet",
@@ -55,7 +56,12 @@ def main() -> int:
     try:
         cfg = s.get("/api/config")
         assert cfg["signer"]["reachable"] and cfg["chain"]["reachable"] and cfg["chain"].get("contract_has_code"), cfg
-        base.step("config", network=cfg["network_label"], contract=contract, signer=cfg["signer"]["address"])
+        base.step("config", network=cfg["network_label"], contract=contract, signer=cfg["signer"]["address"],
+                  rehearsal=testnet.REHEARSAL)
+        agent = testnet.register_agent(w3, "ref-purchasing-agent@1.0.0")
+        base.step("erc8004 identity", target="ref-purchasing-agent@1.0.0", agent_id=agent["agent_id"],
+                  artifact_digest=agent["artifact_digest"], tx=agent["tx"], explorer=agent["explorer"])
+        time.sleep(3)  # the publisher's funding tx sends value: keep it an "emptying" tx under the 10 MON reserve rule
 
         now = w3.eth.get_block("latest").timestamp
         spec = s.post("/api/specs", {"title": "Reference agent 1.0.0 keeps its purchasing promises (testnet)",
@@ -91,6 +97,15 @@ def main() -> int:
         r = s.post(f"/api/challenges/{cid}/transactions", {"tx_hash": hx(rcpt), "kind": "settle"})
         base.step("settle", tx=hx(rcpt), explorer=EXPLORER.format(hx(rcpt)), relayed_by=dep.address,
                   recipient=r["detail"]["recipient"], reward_wei=r["detail"]["reward_wei"], status=r["status"])
+        settle_tx = hx(rcpt)
+        time.sleep(2)
+        # ERC-8004: the reporter re-checks the settlement on chain, then posts reputation feedback
+        # to the official ReputationRegistry for the agent that declares this exact artifact digest.
+        fb = testnet.report_violation(w3, bounties=c, onchain_id=int(funded["onchain_id"]), settle_tx=settle_tx,
+                                      spec=sp, spec_digest=spec["digest"], evidence=s.get(f"/api/evidence/{ev['evidence_digest']}"),
+                                      endpoint=f"{os.environ.get('COUNTERPROOF_PUBLIC_URL', 'https://counterproof.vercel.app')}/challenges/{cid}")
+        base.step("erc8004 feedback", agent_id=fb["agent_id"], reporter=fb["reporter"], tag=f"{fb['tag1']}/{fb['tag2']}",
+                  feedback_index=fb["feedback_index"], tx=fb["tx"], explorer=fb["explorer"])
         time.sleep(2)
         rcpt = testnet.send(w3, chal, {"to": c.address, "data": c.encode_abi("withdraw", args=[])})
         r = s.post(f"/api/challenges/{cid}/transactions", {"tx_hash": hx(rcpt), "kind": "withdraw"})
@@ -100,13 +115,15 @@ def main() -> int:
         reg = s.wait(f"/api/regressions/{reg['id']}", lambda v: v["status"] not in ("queued", "replaying"), what="regression")
         base.step("retest repaired 1.1.0", outcome=reg["outcome"], evidence=reg["evidence_digest"])
         export = s.get(f"/api/regressions/{reg['id']}/export")
-        (report_path.parent / f"regression-testnet-{stamp}.json").write_text(json.dumps(export, indent=2), encoding="utf-8")
+        (report_path.parent / f"regression-{'fork-rehearsal' if testnet.REHEARSAL else 'testnet'}-{stamp}.json").write_text(json.dumps(export, indent=2), encoding="utf-8")
         ok = reg["outcome"] == "not_reproduced"
         if with_refund:
             ok = ok and refund_leg(s, w3, c, pub)
     finally:
         s.close()
-        report = {"format": "counterproof.testnet-e2e/v1", "network": "Monad Testnet (chain 10143)", "contract": contract,
+        network = ("FORK REHEARSAL: local anvil fork of Monad Testnet (chain 10143); no transaction reached Monad testnet"
+                   if testnet.REHEARSAL else "Monad Testnet (chain 10143)")
+        report = {"format": "counterproof.testnet-e2e/v1", "network": network, "contract": contract,
                   "result": "pass" if ok else "fail", "steps": log}
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
