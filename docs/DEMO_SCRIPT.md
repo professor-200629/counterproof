@@ -18,9 +18,11 @@ Monad" on screen), wallet connected, a fresh browser profile, screen at 1440×90
 | 2:40–2:55 | Before / After | Replay the same sequence against 1.1.0: not reproduced. Export the regression test (pytest). |
 | 2:55–3:00 | Overview | "Promise, counterexample, replay, payout, reputation, regression test." |
 
-If time allows (or in the pitch instead): the independent live-model agent (gpt-oss-120b, no
-planted defects) — injected merchant text made it try to raise its own budget; verified in 3
-of 3 replays (docs/evidence/INDEPENDENT_EVALUATION.md). That is a real finding, not a fixture.
+Strongest 15 seconds if you can fit them (or open the pitch with it): challenge #3 on
+counterproof.vercel.app. The independent live-model agent (gpt-oss-120b, no planted defects):
+the merchant-content search found injected shop text that made it try to raise its own budget,
+the evaluator verified it in 3 of 3 fresh replays, the reward settled on Monad testnet and the
+result sits in ERC-8004 as feedback for agent 2192. A real finding, not a fixture.
 
 Backup if the network is slow: the local anvil run (`scripts/e2e_local.py` report) — label
 it as local.
