@@ -48,12 +48,27 @@ Anyone can relay it; the contract pays only the bound recipient.
 Then the loop closes: the developer ships a fix, the same sequence is replayed against the
 new version, and it is exported as a regression test.
 
+Results also leave CounterProof. Each reference agent has an identity in the official
+ERC-8004 IdentityRegistry on Monad testnet whose registration file declares its exact code
+digest. When a challenge settles, a separate reporter key re-checks the settlement and the
+evidence on chain and posts `counterproof.verifiedViolation` feedback (tagged with the rule)
+to the official ERC-8004 ReputationRegistry, with a feedback file that names the challenge,
+spec, submission, evidence and settle transaction. It refuses to attach a result to an agent
+that declares different code.
+
+Where it sits in Track 04: validators check what an agent did against what it said it would
+do. CounterProof is the adversarial side: it pays people to find the inputs that break a
+promise, proves the break by independent replay, and turns it into a regression test and a
+public reputation record.
+
 What we are careful not to claim: a passing test is not proof of safety; the evaluator is a
 declared trusted party, so its signature is an attestation, not a zero-knowledge proof; a
 blockchain receipt proves the payment happened, not that the AI is correct. The demo's
 primary failure comes from an intentionally vulnerable reference agent with planted
 defects, and the interface labels it that way. We also evaluated a second implementation —
-a live-model purchasing agent with no planted defects — and report what we actually found.
+a live-model purchasing agent with no planted defects — and report what we actually found:
+no violation within budget from two strategies, and one verified violation (3 of 3 replays)
+where injected merchant text led the agent to request a budget increase for itself.
 
 ## Why Monad
 
