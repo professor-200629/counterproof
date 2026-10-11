@@ -1,0 +1,11 @@
+{
+  "network": "Monad Testnet",
+  "chain_id": 10143,
+  "contract": "0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4",
+  "deployer": "0x3893A16a140969702F88C1DCa98CA5a1Cc27554B",
+  "tx": "0x06fc71e67fd5dd3b1b6237a2b1f732218121fbbfe6fcc461d5d646567335d7fc",
+  "block": 70164809,
+  "explorer": "https://testnet.monadscan.com/tx/0x06fc71e67fd5dd3b1b6237a2b1f732218121fbbfe6fcc461d5d646567335d7fc",
+  "compiler": "0.8.31+commit.fd3a2265",
+  "deployed_at": 1791737838
+}

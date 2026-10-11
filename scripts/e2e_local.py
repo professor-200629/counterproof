@@ -48,7 +48,9 @@ def step(name: str, **data) -> None:
 
 class Stack:
     def __init__(self, anvil_url: str, contract: str, data_dir: Path, network: str = "anvil-local",
-                 evaluator_key: str = K["evaluator"], challenger_key: str = K["challenger"]):
+                 evaluator_key: str = K["evaluator"], challenger_key: str = K["challenger"],
+                 provider_env: dict | None = None):
+        """provider_env: live-model provider settings and key, given to the API and worker only."""
         self.api_port, self.signer_port = devchain.free_port(), devchain.free_port()
         token = secrets.token_hex(16)
         common = {k: v for k, v in os.environ.items() if not any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET"))}
@@ -64,8 +66,8 @@ class Stack:
         self.procs = []
         for name, module, extra in (
             ("signer", "counterproof.signer", {"EVALUATOR_PRIVATE_KEY": evaluator_key, "COUNTERPROOF_SIGNER_PORT": str(self.signer_port)}),
-            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key}),
-            ("worker", "counterproof.worker", {}),
+            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key} | (provider_env or {})),
+            ("worker", "counterproof.worker", dict(provider_env or {})),
         ):
             f = open(logs / f"{name}.log", "wb")
             self.procs.append(subprocess.Popen([PY, "-m", module], cwd=str(ROOT / "backend"), env=common | extra,

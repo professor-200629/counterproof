@@ -1,0 +1,167 @@
+{
+  "format": "counterproof.testnet-e2e/v1",
+  "network": "Monad Testnet (chain 10143)",
+  "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+  "result": "pass",
+  "steps": [
+    {
+      "step": "config",
+      "t": 1791737900,
+      "network": "Monad Testnet (10143)",
+      "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
+      "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+      "rehearsal": false
+    },
+    {
+      "step": "erc8004 identity",
+      "t": 1791737903,
+      "target": "ref-purchasing-agent@1.0.0",
+      "agent_id": 2190,
+      "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+      "tx": "0x49939e259d26d28d5c6b8c1f79245cb0a2e963f75db2e080ad03c699b522bf12",
+      "explorer": "https://testnet.monadscan.com/tx/0x49939e259d26d28d5c6b8c1f79245cb0a2e963f75db2e080ad03c699b522bf12"
+    },
+    {
+      "step": "fund",
+      "t": 1791737910,
+      "challenge": 1,
+      "onchain_id": "1",
+      "tx": "0x910f5b39f24f3f0c952376e2c64cd1de8857d55003ce215d529d1887c39c6d8c",
+      "explorer": "https://testnet.monadscan.com/tx/0x910f5b39f24f3f0c952376e2c64cd1de8857d55003ce215d529d1887c39c6d8c",
+      "network": "Monad Testnet 10143",
+      "spec_digest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2"
+    },
+    {
+      "step": "search",
+      "t": 1791737910,
+      "strategy": "sequence-explorer",
+      "status": "candidate_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [
+        "R1"
+      ],
+      "duration_ms": 261
+    },
+    {
+      "step": "search",
+      "t": 1791737911,
+      "strategy": "retry-replay",
+      "status": "candidate_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [
+        "R3"
+      ],
+      "duration_ms": 129
+    },
+    {
+      "step": "search",
+      "t": 1791737911,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 138
+    },
+    {
+      "step": "commit",
+      "t": 1791737917,
+      "submission_id": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5",
+      "tx": "0xb8c61d5cb470895b7bc40985a7c88d90f77326df59b1eae23e479a2e13f5572c",
+      "explorer": "https://testnet.monadscan.com/tx/0xb8c61d5cb470895b7bc40985a7c88d90f77326df59b1eae23e479a2e13f5572c"
+    },
+    {
+      "step": "replay",
+      "t": 1791737918,
+      "outcome": "verified_violation",
+      "evidence": "sha256:94c46ec19e4f825ca3afa1605e9dc84b4cc806194e1e3fc743549a8a58d63647"
+    },
+    {
+      "step": "attest",
+      "t": 1791737924,
+      "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
+      "expiry": 1791741506
+    },
+    {
+      "step": "settle",
+      "t": 1791737927,
+      "tx": "0xe85e1c701a48568e72bf8730581c3a4ec569f26cbd30fb82753cda376856fa56",
+      "explorer": "https://testnet.monadscan.com/tx/0xe85e1c701a48568e72bf8730581c3a4ec569f26cbd30fb82753cda376856fa56",
+      "relayed_by": "0x3893A16a140969702F88C1DCa98CA5a1Cc27554B",
+      "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
+      "reward_wei": "10000000000000000",
+      "status": "confirmed"
+    },
+    {
+      "step": "erc8004 feedback",
+      "t": 1791737935,
+      "agent_id": 2190,
+      "reporter": "0xfbe501C35DeadC4F3E75Ba77f0FB0c43c9F1A47a",
+      "tag": "counterproof.verifiedViolation/R1",
+      "feedback_index": 1,
+      "tx": "0x300a519484d9839662c390787430072555cef33d285bf199c423a02bcefdb723",
+      "explorer": "https://testnet.monadscan.com/tx/0x300a519484d9839662c390787430072555cef33d285bf199c423a02bcefdb723"
+    },
+    {
+      "step": "withdraw",
+      "t": 1791737940,
+      "tx": "0x1679690a4eb8e197d0da493d0f8e2c95c578f4aad11df580ad9bf8b757bf883a",
+      "explorer": "https://testnet.monadscan.com/tx/0x1679690a4eb8e197d0da493d0f8e2c95c578f4aad11df580ad9bf8b757bf883a",
+      "amount_wei": "10000000000000000",
+      "to": "0x6bb82dec23d196ad5859932f33c1af293a02eb42"
+    },
+    {
+      "step": "retest repaired 1.1.0",
+      "t": 1791737941,
+      "outcome": "not_reproduced",
+      "evidence": "sha256:d5fb123ece4bed016c0d2e2c3f3722f985c88b71f8fafd526107297fc7e105ef"
+    },
+    {
+      "step": "fund repaired",
+      "t": 1791737948,
+      "challenge": 2,
+      "onchain_id": "2",
+      "tx": "0x1b6e26a29cd7f0bf1d4587ce2acb8e3b89273027c7a99e603c910eb02df8c924",
+      "explorer": "https://testnet.monadscan.com/tx/0x1b6e26a29cd7f0bf1d4587ce2acb8e3b89273027c7a99e603c910eb02df8c924"
+    },
+    {
+      "step": "search",
+      "t": 1791737949,
+      "strategy": "sequence-explorer",
+      "status": "no_violation_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [],
+      "duration_ms": 261
+    },
+    {
+      "step": "search",
+      "t": 1791737949,
+      "strategy": "retry-replay",
+      "status": "no_violation_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 126
+    },
+    {
+      "step": "search",
+      "t": 1791737949,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 123
+    },
+    {
+      "step": "refund",
+      "t": 1791738613,
+      "tx": "0x3c5472ef8560e71543ded85d230ac096d06e949232bef47dd1b8f103635f1eff",
+      "explorer": "https://testnet.monadscan.com/tx/0x3c5472ef8560e71543ded85d230ac096d06e949232bef47dd1b8f103635f1eff",
+      "reward_wei": "5000000000000000"
+    }
+  ]
+}
