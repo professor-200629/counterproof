@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { POLL_MS, useRegressionExport } from "@/lib/queries";
 import { isRegressionActive } from "@/lib/status";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { adapterOfKey } from "@/lib/target-labels";
 
 // ---------------------------------------------------------------------------- in progress
 /** A queued / replaying regression: only what the backend reports, no estimated progress. */
@@ -116,10 +117,12 @@ export interface RegressionListProps {
   query: { data?: Regression[]; isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
   selectedId: string | null;
   onSelect: (r: Regression) => void;
+  /** The challenge's own agent family: rows replayed against another adapter are marked as such. */
+  originalAdapter?: string;
 }
 
 /** Every regression replay recorded for this challenge, newest first. */
-export function RegressionList({ query, selectedId, onSelect }: RegressionListProps) {
+export function RegressionList({ query, selectedId, onSelect, originalAdapter }: RegressionListProps) {
   if (query.isPending) return <Loading label="previous regressions" rows={3} card />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} compact />;
   const regs = query.data ?? [];
@@ -164,7 +167,19 @@ export function RegressionList({ query, selectedId, onSelect }: RegressionListPr
                   </Badge>
                 ) : null}
               </TD>
-              <TD mono>{r.target_key}</TD>
+              <TD mono>
+                {r.target_key}
+                {originalAdapter && adapterOfKey(r.target_key) !== originalAdapter ? (
+                  <Badge
+                    tone="warn"
+                    size="sm"
+                    className="ml-2 font-sans"
+                    title={`Replayed against another agent (adapter ${adapterOfKey(r.target_key) ?? "?"}), not a version of ${originalAdapter}: not a repair of this agent.`}
+                  >
+                    different agent family
+                  </Badge>
+                ) : null}
+              </TD>
               <TD>
                 <StatusBadge status={r.status} domain="regression" size="sm" />
               </TD>

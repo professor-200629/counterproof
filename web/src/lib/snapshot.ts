@@ -19,14 +19,36 @@ import { formatCountdown, formatUnix, plural } from "./format";
 /** True in the hosted, read-only build. Read once, at build time. */
 export const SNAPSHOT_MODE: boolean = process.env.NEXT_PUBLIC_SNAPSHOT === "1";
 
+/** The public CounterProof repository (README with setup and the evaluator's source). */
+export const DEFAULT_SOURCE_URL = "https://github.com/professor-200629/counterproof";
+
 /**
- * Where a visitor learns to run the evaluator themselves (the repository README), from
- * NEXT_PUBLIC_SNAPSHOT_SOURCE_URL at build time. Null until the source is published: then
- * the console says so in plain text instead of linking somewhere that is not the README.
+ * The source URL from an override value: an https URL is used as given; anything else
+ * (unset, empty, http:, javascript:...) falls back to the public repository.
  */
-export const SNAPSHOT_SOURCE_URL: string | null = process.env.NEXT_PUBLIC_SNAPSHOT_SOURCE_URL?.startsWith("https://")
-  ? process.env.NEXT_PUBLIC_SNAPSHOT_SOURCE_URL
-  : null;
+export function sourceUrlFrom(override: string | null | undefined): string {
+  const v = override?.trim();
+  return v && v.startsWith("https://") ? v : DEFAULT_SOURCE_URL;
+}
+
+/**
+ * Where a visitor learns to run the evaluator themselves (the repository README). The
+ * repository is public, so this defaults to it; NEXT_PUBLIC_SNAPSHOT_SOURCE_URL at build
+ * time overrides it (https only). Typed nullable so callers keep their plain-text fallback.
+ */
+export const SNAPSHOT_SOURCE_URL: string | null = sourceUrlFrom(process.env.NEXT_PUBLIC_SNAPSHOT_SOURCE_URL);
+
+/**
+ * docs/REPRODUCE.md of a GitHub repository URL ("https://github.com/<owner>/<repo>"); for any
+ * other source URL, the copy in the public repository.
+ */
+export function reproduceDocUrl(sourceUrl: string | null | undefined): string {
+  const m = /^(https:\/\/github\.com\/[^/\s]+\/[^/\s]+?)\/?$/.exec(sourceUrl ?? "");
+  return `${m ? m[1] : DEFAULT_SOURCE_URL}/blob/main/docs/REPRODUCE.md`;
+}
+
+/** How to reproduce a recorded finding with your own evaluator (docs/REPRODUCE.md). */
+export const REPRODUCE_DOC_URL: string = reproduceDocUrl(SNAPSHOT_SOURCE_URL);
 
 /** Message of the error every mutation throws in snapshot mode. */
 export const READ_ONLY_DETAIL = "This is a read-only recorded snapshot; actions need the evaluator backend (see README)";

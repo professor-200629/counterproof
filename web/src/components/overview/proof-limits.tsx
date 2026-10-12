@@ -47,7 +47,7 @@ const ROWS: Row[] = [
   {
     key: "model",
     result: "Language-model output",
-    shows: "A model may propose candidate sequences or drive an independent implementation under test.",
+    shows: "A model may propose candidate sequences or drive a live-model agent under test (agent code written by the CounterProof team, decisions from a third-party hosted model).",
     doesNot: `A verdict or a payout. ${LLM_NEVER_DECIDES}`,
   },
   {

@@ -366,7 +366,7 @@ function ProviderFacts({ config }: { config: AppConfig }) {
         ]}
       />
       <p className="text-xs text-muted">
-        Models are only used by independent-implementation targets and model-assisted search.
+        Models are only used by live-model agents (team-written targets driven by a hosted model) and model-assisted search.
       </p>
       <TrustStatement kind="llm" />
     </>

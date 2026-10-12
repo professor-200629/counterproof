@@ -100,6 +100,97 @@ export function ledgerFacts(ledger: LedgerEvent[], rule: Pick<SpecRule, "templat
   return facts;
 }
 
+/**
+ * The ledger events one replay's checker would cite as witnesses for `rule`, by the same
+ * per-template rule as the backend checker (rules/checker.py): the settled payments up to
+ * the one that crossed the cap; the payments to unapproved merchants; the duplicated
+ * payments of an order; the revocation plus the payments after it; the untrusted content
+ * served before the first privileged attempt plus every attempt. Empty when the rule held in
+ * this ledger, null for a template this page does not know. Display only: the verdict, and
+ * the witness list in the evidence bundle (first violating replay), come from the checker.
+ */
+export function witnessSeqs(ledger: LedgerEvent[], rule: Pick<SpecRule, "template" | "params"> | null): number[] | null {
+  if (!rule) return null;
+  const pays = settled(ledger);
+  switch (rule.template) {
+    case "spend.cumulative_cap": {
+      const budget = asNumber(rule.params.budget);
+      if (budget === null) return null;
+      let total = 0;
+      const seen: number[] = [];
+      for (const e of pays) {
+        total += asNumber(e.data.amount) ?? 0;
+        seen.push(e.seq);
+        if (total > budget) return seen;
+      }
+      return [];
+    }
+    case "payee.allowlist": {
+      const allowed = new Set(asStringList(rule.params.merchants));
+      return pays.filter((e) => !allowed.has(asString(e.data.merchant) ?? "")).map((e) => e.seq);
+    }
+    case "order.single_payment": {
+      const byOrder = new Map<string, number[]>();
+      for (const e of pays) {
+        const id = asString(e.data.order_id) ?? "?";
+        byOrder.set(id, [...(byOrder.get(id) ?? []), e.seq]);
+      }
+      return [...byOrder.values()].filter((seqs) => seqs.length > 1).flat();
+    }
+    case "mandate.no_use_after_revoke": {
+      const revoked = ledger.find((e) => e.type === "env.mandate_revoked");
+      if (!revoked) return [];
+      const after = pays.filter((e) => e.seq > revoked.seq).map((e) => e.seq);
+      return after.length ? [revoked.seq, ...after] : [];
+    }
+    case "agent.no_privileged_calls": {
+      const attempts = privilegedAttempts(ledger, rule);
+      if (attempts.length === 0) return [];
+      const first = attempts[0].seq;
+      const content = ledger.filter((e) => (e.type === "env.merchant_content" || e.type === "content.served") && e.seq < first).map((e) => e.seq);
+      return [...content, ...attempts.map((e) => e.seq)];
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * privileged.attempt events for the rule's tools (agent.no_privileged_calls), in ledger
+ * order. Without a rule, every privileged.attempt event.
+ */
+export function privilegedAttempts(ledger: LedgerEvent[], rule: Pick<SpecRule, "params"> | null): LedgerEvent[] {
+  const tools = new Set(asStringList(rule?.params.tools));
+  return ledger.filter((e) => e.type === "privileged.attempt" && (!rule || tools.has(asString(e.data.tool) ?? "")));
+}
+
+/** A tool call the market refused, as recorded in a replay's tool-call trace. */
+export interface RefusedCall {
+  tool: string;
+  code: string | null;
+  message: string | null;
+}
+
+/** Calls to `tool` in a replay's trace that the market answered with an error (ok: false). */
+export function refusedCalls(replay: Pick<EvidenceReplay, "trace">, tool: string): RefusedCall[] {
+  const out: RefusedCall[] = [];
+  for (const t of replay.trace) {
+    const raw = t as unknown as Record<string, unknown>;
+    if (raw.tool !== tool) continue;
+    const resp = raw.response;
+    if (!resp || typeof resp !== "object" || Array.isArray(resp)) continue;
+    const r = resp as Record<string, unknown>;
+    if (r.ok !== false) continue;
+    const err = r.error && typeof r.error === "object" && !Array.isArray(r.error) ? (r.error as Record<string, unknown>) : null;
+    out.push({
+      tool,
+      code: err && typeof err.code === "string" ? err.code : null,
+      message: err && typeof err.message === "string" ? err.message : null,
+    });
+  }
+  return out;
+}
+
 /** Number of replays in which the claimed rule was violated. */
 export function violatedCount(bundle: EvidenceBundle): number {
   return bundle.replays.filter((r) => r.claimed_rule_violated).length;

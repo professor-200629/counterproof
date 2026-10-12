@@ -1,13 +1,15 @@
 "use client";
 
 import { Link2, Link2Off } from "lucide-react";
+import type { ReactNode } from "react";
 import { AgentClaims } from "@/components/truth";
+import { witnessSeqs } from "@/components/compare/ledger-facts";
 import { Badge } from "@/components/ui/badge";
 import { Digest } from "@/components/ui/digest";
 import { KeyValueList } from "@/components/ui/stat";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
-import type { EvidenceBundle, EvidenceReplay, JsonObject, JsonValue } from "@/lib/api";
+import type { EvidenceBundle, EvidenceReplay, JsonObject, JsonValue, SpecRule } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDuration, formatNumber } from "@/lib/format";
 import { asNumber } from "@/lib/json";
@@ -117,12 +119,52 @@ export function ReplaysTable({ bundle }: { bundle: EvidenceBundle }) {
   );
 }
 
+/** Which witness rows one replay's ledger marks, and where that list comes from. */
+export interface ReplayWitness {
+  seqs: number[];
+  /**
+   * checker: the evaluator's own list in the verdict (it belongs to the first violating replay);
+   * derived: computed on this page from this replay's own ledger with the checker's rule;
+   * held: the claimed rule was not violated in this replay;
+   * unavailable: violated, but this page cannot derive the events (rule parameters missing).
+   */
+  source: "checker" | "derived" | "held" | "unavailable";
+}
+
+/**
+ * Witness events per replay. The bundle's `verdict.witness_seqs` is the checker's list for
+ * the FIRST violating replay only; another replay's ledger can differ (a live model may call
+ * tools in another order), so its own witnesses are derived from its own ledger.
+ */
+export function replayWitness(
+  bundle: Pick<EvidenceBundle, "verdict" | "replays">,
+  replay: EvidenceReplay,
+  rule: Pick<SpecRule, "template" | "params"> | null,
+): ReplayWitness {
+  const checker = bundle.verdict.witness_seqs ?? [];
+  const firstViolating = bundle.replays.find((r) => r.claimed_rule_violated)?.index ?? null;
+  if (!replay.claimed_rule_violated) return { seqs: [], source: "held" };
+  if (replay.index === firstViolating && checker.length > 0) return { seqs: checker, source: "checker" };
+  const derived = witnessSeqs(replay.ledger, rule);
+  return derived === null ? { seqs: [], source: "unavailable" } : { seqs: derived, source: "derived" };
+}
+
 /** Per-replay detail: ledger timeline with witness events, tool-call trace, agent claims. */
-export function ReplayDetails({ bundle, currency = "SYN" }: { bundle: EvidenceBundle; currency?: string }) {
-  const witness = bundle.verdict.witness_seqs ?? [];
+export function ReplayDetails({
+  bundle,
+  currency = "SYN",
+  rule = null,
+}: {
+  bundle: EvidenceBundle;
+  currency?: string;
+  /** The claimed rule with its parameters (from the spec), to find each replay's own witness events. */
+  rule?: Pick<SpecRule, "template" | "params"> | null;
+}) {
   if (bundle.replays.length === 0) {
     return <p className="text-sm text-muted">No replay ran, so there is no ledger or trace.</p>;
   }
+  const checkerSeqs = bundle.verdict.witness_seqs ?? [];
+  const firstViolating = bundle.replays.find((r) => r.claimed_rule_violated)?.index ?? null;
   return (
     <Tabs
       label="Replays"
@@ -130,14 +172,87 @@ export function ReplayDetails({ bundle, currency = "SYN" }: { bundle: EvidenceBu
         id: String(r.index),
         label: `Replay ${r.index}`,
         badge: replayRuleState(r),
-        content: <ReplayDetail replay={r} witness={witness} currency={currency} />,
+        content: (
+          <ReplayDetail
+            replay={r}
+            witness={replayWitness(bundle, r, rule)}
+            checkerSeqs={checkerSeqs}
+            checkerReplay={firstViolating}
+            template={rule?.template ?? bundle.verdict.rule?.template ?? null}
+            currency={currency}
+          />
+        ),
       }))}
     />
   );
 }
 
-function ReplayDetail({ replay, witness, currency }: { replay: EvidenceReplay; witness: number[]; currency: string }) {
-  const witnessSet = new Set(witness);
+function WitnessNote({
+  witness,
+  checkerSeqs,
+  checkerReplay,
+  template,
+}: {
+  witness: ReplayWitness;
+  checkerSeqs: number[];
+  checkerReplay: number | null;
+  template: string | null;
+}) {
+  const fromChecker = checkerSeqs.length > 0 && checkerReplay !== null ? `seq ${checkerSeqs.join(", ")}, from replay ${checkerReplay}` : null;
+  let text: ReactNode = null;
+  if (witness.source === "checker") {
+    text = (
+      <>
+        Rows marked &quot;witness&quot; are the events the checker cites for the violation (seq {witness.seqs.join(", ")}). The
+        checker&apos;s list comes from this replay, the first one that violated the claimed rule.
+      </>
+    );
+  } else if (witness.source === "derived" && witness.seqs.length > 0) {
+    text = (
+      <>
+        Rows marked &quot;witness&quot; are this replay&apos;s own events for the claimed rule (seq {witness.seqs.join(", ")}),
+        found on this page from this ledger with the checker&apos;s rule{template ? <> for <span className="font-mono">{template}</span></> : null}.
+        {fromChecker ? <> The checker&apos;s own list ({fromChecker}) belongs to another ledger.</> : null}
+      </>
+    );
+  } else if (witness.source === "unavailable" || (witness.source === "derived" && witness.seqs.length === 0)) {
+    text = (
+      <>
+        No row is marked: this replay&apos;s own witness events could not be found on this page
+        {witness.source === "unavailable" ? " (the rule's parameters did not load)" : ""}.
+        {fromChecker ? <> The checker&apos;s witness list ({fromChecker}) belongs to another ledger.</> : null}
+      </>
+    );
+  } else if (fromChecker) {
+    text = <>The claimed rule was not violated in this replay, so no row is marked. The checker&apos;s witness list ({fromChecker}) belongs to another ledger.</>;
+  }
+  if (!text) return null;
+  return (
+    <p className="mb-2 flex items-start gap-2 text-xs text-muted">
+      {witness.seqs.length > 0 ? (
+        <span aria-hidden="true" className="mt-0.5 inline-block size-3 shrink-0 rounded-sm border border-bad-line bg-bad-soft" />
+      ) : null}
+      <span className="min-w-0">{text}</span>
+    </p>
+  );
+}
+
+function ReplayDetail({
+  replay,
+  witness,
+  checkerSeqs,
+  checkerReplay,
+  template,
+  currency,
+}: {
+  replay: EvidenceReplay;
+  witness: ReplayWitness;
+  checkerSeqs: number[];
+  checkerReplay: number | null;
+  template: string | null;
+  currency: string;
+}) {
+  const witnessSet = new Set(witness.seqs);
   const iso = isolationOf(replay);
   const stats = replay.stats;
   return (
@@ -182,12 +297,7 @@ function ReplayDetail({ replay, witness, currency }: { replay: EvidenceReplay; w
         <h3 className="mb-2 text-sm font-semibold text-fg">
           Ledger timeline <span className="font-normal text-muted">({replay.ledger.length} events, written by the evaluator-side market)</span>
         </h3>
-        {witness.length > 0 ? (
-          <p className="mb-2 flex items-center gap-2 text-xs text-muted">
-            <span aria-hidden="true" className="inline-block size-3 rounded-sm border border-bad-line bg-bad-soft" />
-            Rows marked &quot;witness&quot; are the events the checker cites for the violation (seq {witness.join(", ")}).
-          </p>
-        ) : null}
+        <WitnessNote witness={witness} checkerSeqs={checkerSeqs} checkerReplay={checkerReplay} template={template} />
         {replay.ledger.length === 0 ? (
           <p className="text-sm text-muted">The ledger is empty.</p>
         ) : (

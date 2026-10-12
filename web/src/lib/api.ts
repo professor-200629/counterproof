@@ -26,7 +26,11 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 export type JsonObject = { [key: string]: JsonValue };
 
 export type NetworkKind = "anvil-local" | "monad-testnet" | "offchain";
-export type TargetLabel = "intentionally-vulnerable-fixture" | "repaired-fixture" | "independent-implementation";
+export type TargetLabel =
+  | "intentionally-vulnerable-fixture"
+  | "repaired-fixture"
+  | "independent-implementation"
+  | "repaired-live-model";
 export type Determinism = "deterministic" | "stochastic";
 
 export type ChallengeStatus = "awaiting_funding" | "funded" | "settled" | "refunded" | "offchain";
