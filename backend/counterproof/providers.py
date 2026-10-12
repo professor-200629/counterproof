@@ -273,6 +273,158 @@ def broker_for_spec(spec: dict, budget) -> ModelBroker | None:
                        max_tokens=limits["max_model_tokens"] * 20, temperature=float(cfg.get("temperature", 0)))
 
 
+MODEL_PROPOSALS_FORMAT = "counterproof.model-proposals/v1"
+MODEL_PROPOSALS_NOTE = ("observed by the evaluator's model broker; stored alongside, not inside, the sealed evidence "
+                        "bundle")
+_MAX_ARG = 200
+_MAX_RECORDED_CALLS = 400  # per replay; a replay is bounded by the spec's max_model_calls anyway
+
+
+def _safe_value(v):
+    if v is None or isinstance(v, bool):
+        return v
+    if isinstance(v, int):
+        return v if abs(v) <= 2**53 - 1 else str(v)[:40]
+    if isinstance(v, str):
+        return v if len(v) <= _MAX_ARG else v[:_MAX_ARG] + "...<truncated>"
+    return "<omitted>"  # floats, lists, objects: canonical JSON allows no floats, and they are not needed here
+
+
+def sanitize_arguments(raw) -> dict:
+    """A small, canonical-JSON-safe view of the arguments a model proposed."""
+    args = raw
+    if isinstance(raw, str):
+        try:
+            args = json.loads(raw or "{}")
+        except ValueError:
+            return {"_unparsed": raw[:_MAX_ARG]}
+    if not isinstance(args, dict):
+        return {"_unparsed": str(raw)[:_MAX_ARG]}
+    return {k[:40]: _safe_value(v) for k, v in list(args.items())[:8] if isinstance(k, str) and k.isascii()}
+
+
+def _offered_names(tools) -> set[str]:
+    names = set()
+    for t in tools or []:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+            names.add(fn["name"])
+    return names
+
+
+def _attempted_tools(text: str) -> list[str]:
+    """Tool names a provider says the model tried to call in a rejected generation."""
+    import re as _re
+
+    found = _re.findall(r"attempted to call tool '([A-Za-z0-9_.\-]{1,64})'", text)
+    found += _re.findall(r'\\?"name\\?"\s*:\s*\\?"([A-Za-z0-9_.\-]{1,64})', text)
+    return list(dict.fromkeys(found))[:8]
+
+
+class RecordingBroker:
+    """Wraps the broker callable handed to the runner and records, per model call, what the
+    model proposed: each tool call's name, sanitized arguments and whether the name was among
+    the tools the target offered in that request, plus any generation the provider rejected.
+
+    This is the evaluator's own observation of the model, independent of what the agent then
+    did with each proposal (the agent's dispatcher may refuse it) and of the ledger (what
+    reached the market). It changes nothing: every response and exception passes through
+    unchanged. Segment it per replay with `evaluate(on_replay=recorder.on_replay)`.
+    Only the final provider error of a call is visible here; retries inside the client are not."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.segments: list[dict] = []
+        self._current: list[dict] = []
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name):  # .client, .used_tokens ... of the wrapped broker
+        if name == "inner":
+            raise AttributeError(name)
+        return getattr(self.inner, name)
+
+    def _add(self, entry: dict) -> None:
+        with self._lock:
+            entry["model_call"] = len(self._current) + 1
+            if len(self._current) < _MAX_RECORDED_CALLS:
+                self._current.append(entry)
+
+    def __call__(self, request: dict) -> dict:
+        req = request if isinstance(request, dict) else {}
+        offered = _offered_names(req.get("tools"))
+        msgs = req.get("messages") if isinstance(req.get("messages"), list) else []
+        event = sum(1 for m in msgs if isinstance(m, dict) and m.get("role") == "user")
+        try:
+            out = self.inner(request)
+        except BrokerRefused as e:
+            text = redact(str(e))
+            entry = {"event": event, "status": "failed_generation" if e.kind == "model_output" else "refused",
+                     "refusal_kind": e.kind, "error": text[:300], "tool_calls": []}
+            if e.kind == "model_output":
+                entry["attempted_tools"] = [{"name": n, "offered": n in offered} for n in _attempted_tools(text)]
+            self._add(entry)
+            raise
+        msg = (out.get("message") if isinstance(out, dict) else None) or {}
+        calls = []
+        for tc in (msg.get("tool_calls") or [])[:16]:
+            fn = (tc.get("function") if isinstance(tc, dict) else None) or {}
+            name = fn.get("name") if isinstance(fn, dict) else None
+            name = name if isinstance(name, str) else repr(name)
+            calls.append({"name": name[:80], "arguments": sanitize_arguments(fn.get("arguments") if isinstance(fn, dict) else None),
+                          "offered": name in offered})
+        content = msg.get("content") if isinstance(msg.get("content"), str) else ""
+        entry = {"event": event, "status": "ok", "tool_calls": calls}
+        if not calls:
+            entry["text"] = content[:200]
+        self._add(entry)
+        return out
+
+    def on_replay(self, index: int, _record: dict | None = None) -> None:
+        """evaluate(on_replay=...) hook: everything recorded since the last call belongs to replay `index`."""
+        with self._lock:
+            self.segments.append({"index": index, "proposals": self._current})
+            self._current = []
+
+    def artifact(self, bundle: dict) -> dict:
+        """The sidecar document for one evidence bundle (counterproof.model-proposals/v1)."""
+        from .market.engine import PRIVILEGED_TOOLS
+
+        ledgers = {r.get("index"): r.get("ledger") or [] for r in bundle.get("replays") or []}
+        replays = []
+        for seg in self.segments:
+            by_tool: dict[str, int] = {}
+            not_offered: dict[str, int] = {}
+            failed = 0
+            for p in seg["proposals"]:
+                failed += p["status"] == "failed_generation"
+                for c in p["tool_calls"] + p.get("attempted_tools", []):
+                    by_tool[c["name"]] = by_tool.get(c["name"], 0) + 1
+                    if not c["offered"]:
+                        not_offered[c["name"]] = not_offered.get(c["name"], 0) + 1
+            reached = [e for e in ledgers.get(seg["index"], []) if e.get("type") == "privileged.attempt"]
+            replays.append({"index": seg["index"], "proposals": seg["proposals"], "summary": {
+                "model_calls": len(seg["proposals"]),
+                "proposed_by_tool": by_tool,
+                "not_offered_by_tool": not_offered,
+                "failed_generations": failed,
+                "privileged_proposed": sum(n for t, n in by_tool.items() if t in PRIVILEGED_TOOLS),
+                "privileged_attempts_in_ledger": len(reached),
+            }})
+        client = getattr(self.inner, "client", None)
+        model = f"{client.provider}/{client.model}" if client is not None and hasattr(client, "provider") else None
+        target = bundle.get("target") or {}
+        return {"format": MODEL_PROPOSALS_FORMAT, "evidence_digest": bundle.get("evidence_digest"),
+                "spec_digest": (bundle.get("challenge") or {}).get("spec_digest"),
+                "target": f"{target.get('adapter')}@{target.get('version')}", "model": model,
+                "note": MODEL_PROPOSALS_NOTE, "replays": replays,
+                "unassigned": self._current[:_MAX_RECORDED_CALLS]}
+
+
+def recording_broker(broker) -> RecordingBroker | None:
+    """Wrap a live broker for stochastic targets; None stays None (deterministic targets)."""
+    return RecordingBroker(broker) if broker is not None else None
+
+
 def provenance_for(spec: dict, run: dict, broker: ModelBroker | None) -> dict:
     p = {"strategy": run["strategy"], "mode": run["mode"], "target_determinism": spec["target"]["determinism"],
          "inference": "none (deterministic)"}
