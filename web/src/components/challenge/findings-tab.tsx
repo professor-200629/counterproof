@@ -22,6 +22,7 @@ import { Mono, TextLink } from "@/components/ui/text-link";
 import { Disclosure } from "@/components/ui/disclosure";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { useCompareLinkLabel } from "@/components/compare/compare-link-label";
 
 /** Why the backend would refuse a submission now (services.submit_candidate), or null. */
 function submitBlockedReason(view: ChallengeView, nowMs: number | null): string | null {
@@ -42,6 +43,7 @@ export function FindingsTab({ view, config, nowMs }: FindingsTabProps) {
   const candidates = [...view.candidates].sort((a, b) => b.created_at - a.created_at);
   const evaluations = [...view.evaluations].sort((a, b) => b.created_at - a.created_at);
   const hasVerified = evaluations.some((e) => e.outcome === "verified_violation");
+  const compareLabel = useCompareLinkLabel(view.id, view.spec.target, "Repair and re-test");
 
   return (
     <div className="space-y-8">
@@ -81,7 +83,7 @@ export function FindingsTab({ view, config, nowMs }: FindingsTabProps) {
         actions={
           hasVerified ? (
             <ButtonLink href={`/challenges/${view.id}/compare`} size="sm" icon={<GitCompare />}>
-              {SNAPSHOT_MODE ? "Before / after (recorded)" : "Repair and re-test"}
+              {compareLabel}
             </ButtonLink>
           ) : null
         }

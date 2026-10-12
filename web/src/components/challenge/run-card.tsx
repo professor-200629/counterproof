@@ -18,6 +18,12 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
+/** What each search-generator mode means (the strategy's mode, not the target's). */
+const GENERATOR_WORDS: Record<string, string> = {
+  deterministic: "a fixed strategy enumerates sequences; no model proposes them",
+  "model-assisted": "a language model proposes sequences",
+};
+
 export interface RunCardProps {
   run: RunSummary;
   view: ChallengeView;
@@ -36,6 +42,11 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
   const outcomes = rec ? Object.entries(rec.run_outcomes) : [];
   // run.error is usually the search errors joined; list them separately only when they add something.
   const extraErrors = rec ? rec.errors.filter((e) => !run.error || !run.error.includes(e)) : [];
+  // The run's mode is the search generator's; the target's own nature is separate.
+  const liveTarget =
+    prov?.target_determinism === "stochastic" || view.spec.target.determinism === "stochastic" || view.target_info?.requires_model === true;
+  const configModel = view.spec.target.config.model;
+  const targetModel = prov?.target_model ?? (typeof configModel === "string" ? configModel : null);
 
   return (
     <Card as="li">
@@ -49,7 +60,8 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
         }
         description={
           <span className="text-xs">
-            {run.mode} - started <TimeAgo ts={run.created_at} />
+            Search generator: <span className="font-medium text-fg">{run.mode}</span>
+            {GENERATOR_WORDS[run.mode] ? ` (${GENERATOR_WORDS[run.mode]})` : ""} - started <TimeAgo ts={run.created_at} />
             {rec?.strategy_version ? ` - strategy v${rec.strategy_version}` : ""}
           </span>
         }
@@ -72,6 +84,19 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
         }
       />
       <CardBody className="space-y-3">
+        {liveTarget ? (
+          <p className="rounded-md border border-line bg-inset px-3 py-2 text-xs text-muted">
+            <span className="font-medium text-fg">Search generator is not the target.</span> &quot;{run.mode}&quot; describes how this
+            search produced action sequences. The agent under test is a live model
+            {targetModel ? (
+              <>
+                {" "}
+                (<span className="font-mono text-fg">{targetModel}</span>)
+              </>
+            ) : null}
+            : its replies are stochastic, so the same sequence can behave differently on another run.
+          </p>
+        ) : null}
         <RunProgress status={run.status} record={rec} />
 
         {active && SNAPSHOT_MODE ? (
@@ -115,7 +140,7 @@ export function RunCard({ run, view, strategyTitle, onShowFindings }: RunCardPro
           <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
             {prov ? (
               <div className="flex gap-1">
-                <dt className="text-muted">Inference</dt>
+                <dt className="text-muted">Target inference</dt>
                 <dd className="text-fg">{prov.inference}</dd>
               </div>
             ) : null}

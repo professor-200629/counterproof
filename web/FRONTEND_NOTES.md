@@ -97,7 +97,8 @@ All types are derived from real backend responses. Key types:
 
 - primitives: `Hex`, `UnixSeconds` (seconds, not ms), `Digest` (`"sha256:<64 hex>"`),
   `JsonValue`, `JsonObject`, `NetworkKind` (`"anvil-local" | "monad-testnet" | "offchain"`),
-  `TargetLabel` (`"intentionally-vulnerable-fixture" | "repaired-fixture" | "independent-implementation"`),
+  `TargetLabel` (`"intentionally-vulnerable-fixture" | "repaired-fixture" | "independent-implementation" | "repaired-live-model"`;
+  stored values - display words live in `lib/target-labels.ts`, see section 8),
   `Determinism`.
 - statuses: `ChallengeStatus`, `RunStatus`, `CandidateStatus`, `EvaluationOutcome`,
   `EvaluationStatus` (`queued | replaying | <outcome>`), `RegressionStatus`, `JobStatus`,
@@ -310,7 +311,7 @@ Render it with `<TxStatus {...tx} label="Funding" />` (see 9).
   - `busy` disables and swaps the label; no spinner. `ButtonLink({ href, variant?, size?, icon?, external? })`; `buttonClasses(variant, size, className)`.
 - `Badge({ tone?: Tone, size?: "sm"|"md"|"lg", icon?, ...span props })`.
 - `StatusBadge({ status, domain?, size?, label?, showIcon?, className? })` - label + semantic colour + icon from `statusMeta`; description as tooltip and sr-only text. `StatusIconGlyph({ icon, className })`.
-- `ProvenanceBadge({ kind: "target", value: TargetLabel, requiresModel?, size? })` - `intentionally-vulnerable-fixture` renders a large amber "Intentionally vulnerable fixture - planted defects"; `repaired-fixture` -> "Repaired fixture"; `independent-implementation` -> "Independent implementation (live model)". `({ kind: "network", value: NetworkKind })` -> network label.
+- `ProvenanceBadge({ kind: "target", value: TargetLabel, requiresModel?, size? })` - `intentionally-vulnerable-fixture` renders a large amber "Intentionally vulnerable fixture - planted defects"; `repaired-fixture` -> "Repaired fixture"; `independent-implementation` -> "Live-model agent (team-written, no planted defects)"; `repaired-live-model` -> "Repaired live-model agent (team-written)". Every adapter was written by the CounterProof team (the hosted model is third-party), so the console never says "independent". The words come from `lib/target-labels.ts` (`targetLabelText`, `isLiveModelLabel`, `adapterOfKey`, ...); target badges wrap instead of truncating. `({ kind: "network", value: NetworkKind })` -> network label.
 - `Card({ as?, tone?, padded?, ...props })`, `CardHeader({ title, level?: 2|3|4, description?, actions?, eyebrow?, id? })`, `CardBody`, `CardFooter`, `Callout({ tone?, title?, icon?, role?: "status"|"note"|"alert", children })`.
 - `Section({ title, description?, actions?, id?, level?: 2|3, children })` (labelled `<section>`), `PageHeader({ title, description?, meta?, actions?, breadcrumb? })` (the page `<h1>`).
 - `StatGrid({ columns?: 2-6, children })` + `Stat({ label, value, hint?, tone?, mono? })` (a `<dl>`); `KeyValueList({ items: { label, value, key? }[] })`.
@@ -383,6 +384,39 @@ Render it with `<TxStatus {...tx} label="Funding" />` (see 9).
 - Payout: the reward goes to the recipient bound at commit time (`attestation.typed_data.message.recipient`); anyone may relay `settle`.
 - Model output never decides payouts: `<TrustStatement kind="llm" />` where model-assisted search is offered.
 - No invented data: every number, address, hash and message comes from the API or the chain.
+- Repairs are same-family only: "the repaired version" of a target is another version of the SAME
+  adapter (`lib/target-labels.ts` `replayRelation`: `repair` | `same-version` | `other-family`;
+  `compare-view.tsx` `repairTargets` / `defaultTargetKey` / `isRepairOf`; the live picker offers
+  nothing else). Only a `repair` fills the "After" column by default. A recorded regression on the
+  original key is labelled "same version re-run, not a repair", one on another adapter "different
+  agent family"; neither is ever read as a repair. For a live-model target, a regression result is
+  stated with replay counts as bounded statistical evidence (whatever the outcome), never "the
+  repaired version resisted". Regression status badges are neutral about which version ran
+  ("Not reproduced on replay" / "Violated on replay").
+- Before / after in a recording: the compare page's lead sentence (`compareDescription`) and the
+  entry links (`compare/compare-link-label.ts`, used by the challenge header, the findings tab and
+  the evidence page) say whether a repair was recorded ("Before / after (no repair recorded)");
+  they never announce a recorded comparison that does not exist. Live, the links name the action.
+- Witness rows: `verdict.witness_seqs` belongs to the FIRST violating replay only. Other replays
+  mark their own witnesses, derived from their own ledger by `witnessSeqs` (`compare/ledger-facts.ts`,
+  the backend checker's per-template rule); `evidence/replays.tsx` `replayWitness` says which.
+
+### Overview first screen
+
+`overview-view.tsx` renders, in order: the page header, `FeaturedFinding`
+(`overview/featured-finding.tsx`), the counts and a currency legend (testnet MON rewards vs
+synthetic SYN marketplace amounts), then challenges, activity and environment. The featured card
+picks (pure helpers in `overview/featured-data.ts`) the newest challenge whose target is a
+live-model agent with a verified violation, else the newest verified violation (its fixture
+badge stays amber and large). From recorded API data only it states the promise, the agent and
+model, the injected merchant text (quoted, truncated with a toggle), the attempted privileged
+call and the market's refusal (ledger + trace), the replay tally against the spec's policy, what
+was settled / withdrawn (`lib/reward-facts.ts`) and the ERC-8004 feedback, whether a SAME-family
+repair was replayed ("Repair: not yet replayed for this agent" otherwise), and links to inspect
+(evidence, settlement, spec JSON, README, docs/REPRODUCE.md). Digests and ledger digests sit in a
+collapsed disclosure. Counts: "Awaiting settlement" (backend `funded`, status funded now), "Ever
+funded" and the live-model / planted-fixture split of verified violations are derived from
+`/api/challenges` (no backend change).
 
 Shared helpers outside components: `lib/format.ts` also has `plural(n, one, many?)`, `formatBytes`,
 `sameHex(a, b) -> boolean | null`; `lib/json.ts` has `asNumber` / `asString` / `asStringList`;
@@ -423,7 +457,7 @@ Where it is implemented:
 
 | Piece | File | Behaviour in snapshot mode |
 | --- | --- | --- |
-| Mode + manifest | `lib/snapshot.ts` | `SNAPSHOT_MODE`, `SNAPSHOT_MANIFEST`, `SNAPSHOT_TAKEN_AT`, `SNAPSHOT_SOURCE_URL` (the one place for the repo URL), `snapshotFile`, `snapshotBannerText`, `deadlineAtSnapshot`, `READ_ONLY_DETAIL`, `NOT_IN_SNAPSHOT` |
+| Mode + manifest | `lib/snapshot.ts` | `SNAPSHOT_MODE`, `SNAPSHOT_MANIFEST`, `SNAPSHOT_TAKEN_AT`, `SNAPSHOT_SOURCE_URL` (the one place for the repo URL: defaults to the public repository `https://github.com/professor-200629/counterproof`; `NEXT_PUBLIC_SNAPSHOT_SOURCE_URL` overrides it, https only), `REPRODUCE_DOC_URL` (its `docs/REPRODUCE.md`), `snapshotFile`, `snapshotBannerText`, `deadlineAtSnapshot`, `READ_ONLY_DETAIL`, `NOT_IN_SNAPSHOT` |
 | Build | `next.config.ts` | no `/api` rewrite; inlines `public/snapshot/manifest.json` as `NEXT_PUBLIC_SNAPSHOT_MANIFEST`; **fails the build** when it is missing or malformed |
 | Transport | `lib/api.ts` | every GET fetches `snapshotFile("/api" + path)`; 404 -> `ApiError(404, "... not included in this recorded snapshot")`; every POST throws `ApiError(405, READ_ONLY_DETAIL, kind "read_only_snapshot")` with no request; `evidenceDownloadUrl` / `specJsonUrl` / `regressionExportUrl` return the static files (links carry `download`, with `evidenceFilename` / `regressionExportFilename`) |
 | Polling | `lib/queries.ts` | `pollWhile` / `pollIf` return `false`; `staleTime: Infinity`, no refetch on focus / reconnect |
@@ -447,4 +481,10 @@ GETs read static files, missing file -> 404 wording, every mutation throws the r
 without a request, download URLs, no polling, banner text with `taken_at` and network label,
 every file of the sample snapshot reachable by the mapping) and `src/test/snapshot-mode.test.ts`
 (views rendered from `public/snapshot` with the mode on: banner, no wallet, no action buttons,
-no live anvil read, static download links, the create explainer, the not-included 404).
+the recorded network's chain-read wording read from `manifest.json` (anvil or Monad testnet),
+static download links, the create explainer, the not-included 404, the featured finding with
+every value checked against the recorded files (and pinned literally for the challenge #3 evidence
+digest), a recording without a live-model finding failing rather than skipping, compare never
+offering another agent family or a re-run of the original as the repair, the entry-link wording,
+each replay's witness rows rendered from its own ledger, and the evidence page's withdraw answer). `src/lib/__tests__/judge-view.test.ts` covers label words, source / REPRODUCE
+links, reward lookups, featured selection and per-replay witness rows.

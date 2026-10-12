@@ -32,7 +32,8 @@ import {
 } from "@/lib/api";
 import { formatWei, txNetworkPhrase } from "@/lib/chain";
 import { cn } from "@/lib/cn";
-import { plural, sameHex, shortAddress } from "@/lib/format";
+import { plural, shortAddress } from "@/lib/format";
+import { settleTxForEvidence, settledRecipient, settledRewardWei, withdrawalAfterSettle, withdrawnWei } from "@/lib/reward-facts";
 import { useCandidate, useChallenge, useConfig, useEvaluation, useEvidence, useRetryEvaluation, useRuleTemplates } from "@/lib/queries";
 import { isEvaluationActive, statusMeta } from "@/lib/status";
 import { Mono, TextLink, textLinkClasses } from "@/components/ui/text-link";
@@ -47,6 +48,7 @@ import { WhoChecked } from "./who-checked";
 import { useSignatureBinding, type SignatureBinding } from "@/components/settlement/use-recovered-signer";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { useCompareLinkLabel } from "@/components/compare/compare-link-label";
 
 const NAV = [
   ["answers", "At a glance"],
@@ -266,12 +268,19 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
   const rule = v.rule ?? (specRule ? { rule_id: specRule.id, template: specRule.template, statement: specRule.statement } : null);
   const template = templates.data?.find((t) => t.id === rule?.template) ?? null;
   const violated = bundle.replays.filter((r) => r.claimed_rule_violated).length;
+  const firstViolating = bundle.replays.find((r) => r.claimed_rule_violated)?.index ?? null;
   const ledgerRef = bundle.replays[0]?.ledger_digest ?? null;
   const identical = bundle.replays.length > 1 && bundle.replays.every((r) => r.ledger_digest !== null && r.ledger_digest === ledgerRef);
   const evidenceDigest = bundle.evidence_digest ?? evaluation.evidence_digest;
   const actions = bundle.candidate?.actions ?? [];
   const shrunk = !!bundle.candidate?.provenance.note && /shrunk/i.test(bundle.candidate.provenance.note);
   const reward = rewardAnswer({ evaluation, bundle, challenge, attestation, evidenceDigest });
+  const compareLabel = useCompareLinkLabel(
+    evaluation.challenge_id,
+    challenge?.spec.target ?? bundle.target,
+    "Replay against a repaired version",
+    evaluation.candidate_id,
+  );
   const binding = useSignatureBinding(attestation, bundle.evaluator.address);
   const deterministic = bundle.target.determinism === "deterministic";
   const specLink = (
@@ -443,7 +452,9 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
             <ObservedView observed={v.observed} witnessSeqs={v.witness_seqs} currency={currency} />
             {v.witness_seqs && v.witness_seqs.length > 0 ? (
               <p className="text-xs text-muted">
-                Witness ledger events: seq {v.witness_seqs.join(", ")} (highlighted in each replay&apos;s ledger below).
+                Witness ledger events cited by the checker: seq {v.witness_seqs.join(", ")}
+                {firstViolating !== null ? `, from replay ${firstViolating} (the first replay that violated the claimed rule)` : ""}. Each
+                replay&apos;s ledger below marks its own witness events; with a live model they can sit at other positions.
               </p>
             ) : null}
           </Card>
@@ -553,7 +564,7 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
                         size="sm"
                         icon={<GitCompare />}
                       >
-                        Replay against a repaired version
+                        {compareLabel}
                       </ButtonLink>
                     ) : null}
                   </div>
@@ -579,7 +590,7 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
       >
         <div className="space-y-5">
           {bundle.replays.length > 0 ? <ReplaysTable bundle={bundle} /> : null}
-          <ReplayDetails bundle={bundle} currency={currency} />
+          <ReplayDetails bundle={bundle} currency={currency} rule={specRule} />
         </div>
       </Section>
 
@@ -770,25 +781,34 @@ function rewardAnswer({
   if (challenge.status === "offchain") {
     return { tone: "neutral", text: "No. This is an off-chain challenge: there is no reward, only evidence." };
   }
-  const settle = challenge.transactions.find(
-    (t) =>
-      t.kind === "settle" &&
-      t.status === "confirmed" &&
-      typeof t.detail?.evidence_digest === "string" &&
-      sameHex(t.detail.evidence_digest, evidenceDigest) === true,
-  );
+  const settle = settleTxForEvidence(challenge.transactions, evidenceDigest);
   if (settle) {
-    const d = settle.detail ?? {};
-    const amount = typeof d.reward_wei === "string" ? formatWei(d.reward_wei, challenge.network) : null;
-    const recipient = typeof d.recipient === "string" ? d.recipient : null;
+    const rewardWei = settledRewardWei(settle);
+    const amount = rewardWei ? formatWei(rewardWei, challenge.network) : null;
+    const recipient = settledRecipient(settle);
+    const withdrawal = withdrawalAfterSettle(challenge.transactions, settle, recipient);
+    const withdrawnAmount = withdrawnWei(withdrawal);
     return {
       tone: "ok",
       text: (
-        <div className="text-fg">
-          <span className="font-semibold text-ok">Yes.</span> A confirmed settle transaction on {txNetworkPhrase(settle.chain_id)} credited{" "}
-          {amount ?? "the reward"} to {recipient ? <span className="font-mono text-xs">{shortAddress(recipient)}</span> : "the bound recipient"}{" "}
-          for this evidence (the recipient withdraws it separately).{" "}
-          <TxHash hash={settle.hash} chainId={settle.chain_id} label="settle transaction hash" /> <TrustStatement kind="receipt" className="mt-1" />
+        <div className="space-y-1 text-fg">
+          <p>
+            <span className="font-semibold text-ok">Yes.</span> A confirmed settle transaction on {txNetworkPhrase(settle.chain_id)} credited{" "}
+            {amount ?? "the reward"} to {recipient ? <span className="font-mono text-xs">{shortAddress(recipient)}</span> : "the bound recipient"}{" "}
+            for this evidence. <TxHash hash={settle.hash} chainId={settle.chain_id} label="settle transaction hash" />
+          </p>
+          {withdrawal ? (
+            <p>
+              The recipient then withdrew its whole credit ({withdrawnAmount ? formatWei(withdrawnAmount, challenge.network) : "amount not recorded"}),
+              which includes this reward, in a confirmed withdraw transaction.{" "}
+              <TxHash hash={withdrawal.hash} chainId={withdrawal.chain_id} label="withdraw transaction hash" />
+            </p>
+          ) : (
+            <p className="text-muted">
+              The credit stays in the contract until the recipient withdraws it; no withdrawal by the recipient is recorded.
+            </p>
+          )}
+          <TrustStatement kind="receipt" className="mt-1" />
         </div>
       ),
     };
