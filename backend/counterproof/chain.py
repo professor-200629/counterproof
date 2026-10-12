@@ -308,9 +308,15 @@ def _store_attestation(conn: sqlite3.Connection, c: dict, e: dict, a: dict) -> t
                          "verification=COALESCE(?, verification), updated_at=? WHERE challenge_id=?",
                          (a["attestation_id"], dumps(a["typed_data"]), a["signature"], a["signer"], a["expiry"],
                           a.get("evidence_digest"), verification, t, c["id"]))
-            log_activity(conn, "attestation.renewed", f"Evaluator {a['signer'][:10]}... re-signed the same attestation with a new "
-                         f"expiry {a['expiry']} (was {cur['expiry']}; replaces {cur['id']})", c["id"], a["attestation_id"])
-            change = "renewed"
+            if a.get("kind") == "reverified":
+                log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... replayed the submission itself and "
+                             f"signed a new attestation over its own evidence (expires {a['expiry']}; replaces {cur['id']}, "
+                             "signed before the signer verified submissions itself)", c["id"], a["attestation_id"])
+                change = "reverified"
+            else:
+                log_activity(conn, "attestation.renewed", f"Evaluator {a['signer'][:10]}... re-signed the same attestation with a "
+                             f"new expiry {a['expiry']} (was {cur['expiry']}; replaces {cur['id']})", c["id"], a["attestation_id"])
+                change = "renewed"
         else:
             change = "unchanged"
     return row(conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (c["id"],)).fetchone()), change
