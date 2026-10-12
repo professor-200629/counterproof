@@ -18,7 +18,9 @@ PROVIDER_KEYS = {"GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"}
 # Which secrets each process may load from .env. Everything else that looks secret is
 # skipped, so e.g. the API and worker never hold the evaluator's signing key.
 ROLE_SECRETS = {
-    "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"},
+    # The signer replays every submission itself before it signs, including live-model ones,
+    # so its model broker needs the provider keys. Target children never receive them.
+    "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "api": {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "worker": {"COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "script": None,  # deployment/key scripts may read everything

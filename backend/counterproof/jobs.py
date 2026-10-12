@@ -38,6 +38,11 @@ def heartbeat(conn: sqlite3.Connection, job_id: str) -> bool:
     return bool(r and r["cancel_requested"])
 
 
+def progress(conn: sqlite3.Connection, job_id: str, result: dict) -> None:
+    """Record the latest intermediate result of a running job (e.g. what the signer said)."""
+    conn.execute("UPDATE jobs SET result=? WHERE id=? AND status IN ('running','cancelling')", (dumps(result), job_id))
+
+
 def finish(conn: sqlite3.Connection, job_id: str, status: str, result: dict | None = None, error: str | None = None) -> None:
     conn.execute("UPDATE jobs SET status=?, result=?, error=?, finished_at=? WHERE id=?",
                  (status, dumps(result) if result is not None else None, error, now(), job_id))

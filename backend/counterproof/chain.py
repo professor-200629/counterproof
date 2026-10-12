@@ -213,48 +213,151 @@ def commit_submission_as_challenger(conn: sqlite3.Connection, challenge_row: dic
 
 
 # --------------------------------------------------------------------------- attestation
-def request_attestation(conn: sqlite3.Connection, eid: str) -> dict:
+# The signer verifies every submission itself (a fresh k-of-n replay of the committed
+# candidate) before it signs, which takes minutes for a live model. The API therefore asks
+# through a worker job of kind "attestation" that polls the signer until it signs, refuses
+# or reports a failure; nothing here blocks on the replay.
+ATTESTATION_MARGIN = 300        # a stored attestation is reused only while it has more time left than this
+ATTESTATION_POLL_SECONDS = 10.0  # how often the attestation job asks the signer again
+ATTESTATION_POLL_LIMIT = 3600.0  # how long one attestation job keeps asking (a live replay takes minutes)
+ACTIVE_JOB = ("queued", "running", "cancelling")
+
+
+def attestation_usable(a: dict | None, at: int | None = None) -> bool:
+    return bool(a) and a["expiry"] - (now() if at is None else at) > ATTESTATION_MARGIN
+
+
+def attestation_job(conn: sqlite3.Connection, *, evaluation_id: str | None = None, challenge_id: int | None = None,
+                    active_only: bool = False) -> dict | None:
+    """The latest attestation job for an evaluation or a challenge."""
+    where, args = ["kind='attestation'"], []
+    if evaluation_id is not None:
+        where.append("json_extract(params, '$.evaluation_id')=?")
+        args.append(evaluation_id)
+    if challenge_id is not None:
+        where.append("json_extract(params, '$.challenge_id')=?")
+        args.append(challenge_id)
+    if active_only:
+        where.append(f"status IN ({','.join('?' * len(ACTIVE_JOB))})")
+        args += list(ACTIVE_JOB)
+    return row(conn.execute(f"SELECT * FROM jobs WHERE {' AND '.join(where)} ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                            args).fetchone())
+
+
+def enqueue_attestation(conn: sqlite3.Connection, eid: str) -> dict:
+    """Queue an attestation job for this evaluation, or return the one already active."""
+    from . import jobs, services
+
+    e = services.get_evaluation(conn, eid)
+    with tx(conn):
+        active = attestation_job(conn, evaluation_id=eid, active_only=True)
+        if active:
+            return active
+        jid = jobs.enqueue(conn, "attestation", {"evaluation_id": eid, "challenge_id": e["challenge_id"]})
+        log_activity(conn, "attestation.queued", "Attestation requested: the evaluator's signer will replay the committed "
+                     "candidate itself before it signs", e["challenge_id"], eid)
+    return jobs.get(conn, jid)
+
+
+def start_attestation(conn: sqlite3.Connection, eid: str) -> tuple[int, dict]:
+    """POST /api/evaluations/{eid}/attest: (200, usable attestation) or (202, queued/verifying job)."""
     from . import services
 
     existing = row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
-    if existing:
-        return existing
+    if attestation_usable(existing):
+        return 200, existing
     e = services.get_evaluation(conn, eid)
     c = services.get_challenge(conn, e["challenge_id"])
     if c["status"] != "funded":
         raise ChainError(f"challenge is {c['status']}; nothing to attest")
+    summary = e["summary"] if isinstance(e["summary"], dict) else {}
+    if e["outcome"] != "verified_violation" or not summary.get("reward_eligible"):
+        raise ChainError("only a reward-eligible verified violation can be attested")
+    job = enqueue_attestation(conn, eid)
+    return 202, {"status": "verifying" if job["status"] == "running" else "queued", "job_id": job["id"],
+                 "evaluation_id": eid, "job": job, "attestation": existing}
+
+
+def _signer_post(body: dict) -> httpx.Response:
     s = settings()
     headers = {"Authorization": f"Bearer {s.signer_token}"} if s.signer_token else {}
-    try:
-        r = httpx.post(f"{s.signer_url}/attest", json={"evaluation_id": eid, "evidence_digest": e["evidence_digest"],
-                                                       "spec_digest": c["spec_digest"], "onchain_challenge_id": c["onchain_id"],
-                                                       "submission_id": e["submission_id"]},
-                       headers=headers, timeout=120)
-    except httpx.HTTPError as ex:
-        raise ChainError(f"signer unreachable at {s.signer_url}: {type(ex).__name__}") from ex
-    if r.status_code != 200:
-        raise ChainError(f"signer refused: {redact(r.text[:400])}")
-    a = r.json()
+    return httpx.post(f"{s.signer_url}/attest", json=body, headers=headers, timeout=120)
+
+
+def _store_attestation(conn: sqlite3.Connection, c: dict, e: dict, a: dict) -> tuple[dict, str]:
+    """Insert the signer's attestation, or update the challenge's row when it was renewed."""
+    verification = dumps(a["verification"]) if a.get("verification") else None
+    t = now()
     with tx(conn):
-        conn.execute("INSERT OR IGNORE INTO attestations(id, challenge_id, evaluation_id, submission_id, typed_data, signature, signer, expiry, created_at) "
-                     "VALUES (?,?,?,?,?,?,?,?,?)", (a["attestation_id"], c["id"], eid, e["submission_id"], dumps(a["typed_data"]),
-                                                    a["signature"], a["signer"], a["expiry"], now()))
-        log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... signed the attestation (expires {a['expiry']})",
-                     c["id"], a["attestation_id"])
-    return row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
+        cur = row(conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (c["id"],)).fetchone())
+        if cur is None:
+            conn.execute("INSERT INTO attestations(id, challenge_id, evaluation_id, submission_id, typed_data, signature, signer, "
+                         "expiry, created_at, evidence_digest, verification, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (a["attestation_id"], c["id"], e["id"], e["submission_id"], dumps(a["typed_data"]), a["signature"],
+                          a["signer"], a["expiry"], t, a.get("evidence_digest"), verification, t))
+            v = a.get("verification") or {}
+            how = (f" after its own replays violated the rule in {v.get('violated')} of {v.get('replays')}"
+                   if v.get("replays") else "")
+            log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... signed the attestation{how} "
+                         f"(expires {a['expiry']})", c["id"], a["attestation_id"])
+            change = "signed"
+        elif cur["evaluation_id"] != e["id"]:
+            raise ChainError("this challenge already holds an attestation for another evaluation")
+        elif cur["id"] != a["attestation_id"] or cur["expiry"] != a["expiry"]:
+            conn.execute("UPDATE attestations SET id=?, typed_data=?, signature=?, signer=?, expiry=?, evidence_digest=?, "
+                         "verification=COALESCE(?, verification), updated_at=? WHERE challenge_id=?",
+                         (a["attestation_id"], dumps(a["typed_data"]), a["signature"], a["signer"], a["expiry"],
+                          a.get("evidence_digest"), verification, t, c["id"]))
+            log_activity(conn, "attestation.renewed", f"Evaluator {a['signer'][:10]}... re-signed the same attestation with a new "
+                         f"expiry {a['expiry']} (was {cur['expiry']}; replaces {cur['id']})", c["id"], a["attestation_id"])
+            change = "renewed"
+        else:
+            change = "unchanged"
+    return row(conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (c["id"],)).fetchone()), change
 
 
-def request_attestation_safely(conn: sqlite3.Connection, eid: str) -> None:
+def request_attestation(conn: sqlite3.Connection, eid: str, retry_failed: bool = True) -> dict:
+    """Ask the signer once. Returns {"status": signed | pending | refused | failed | unavailable, ...}.
+
+    A stored attestation is returned without asking only while it is usable (more than
+    ATTESTATION_MARGIN seconds left); otherwise the signer is asked to renew it.
+    `retry_failed=False` polls: a failed verification is reported instead of re-run."""
     from . import services
 
+    existing = row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
+    if attestation_usable(existing):
+        return {"status": "signed", "change": "stored", "attestation": existing}
     e = services.get_evaluation(conn, eid)
     c = services.get_challenge(conn, e["challenge_id"])
     if c["status"] != "funded":
-        return
+        raise ChainError(f"challenge is {c['status']}; nothing to attest")
+    body = {"evaluation_id": eid, "evidence_digest": e["evidence_digest"], "spec_digest": c["spec_digest"],
+            "onchain_challenge_id": c["onchain_id"], "submission_id": e["submission_id"], "retry_failed": retry_failed}
     try:
-        request_attestation(conn, eid)
-    except Exception as ex:
-        log_activity(conn, "attestation.pending", f"Attestation not obtained yet: {redact(str(ex))[:300]}", c["id"], eid)
+        r = _signer_post(body)
+    except httpx.HTTPError as ex:
+        return {"status": "unavailable", "detail": f"signer unreachable at {settings().signer_url}: {type(ex).__name__}"}
+    try:
+        a = r.json()
+    except ValueError:
+        a = {}
+    if not isinstance(a, dict):
+        a = {}
+    if r.status_code == 200 and a.get("status", "signed") == "signed":
+        stored, change = _store_attestation(conn, c, e, a)
+        return {"status": "signed", "change": change, "attestation": stored}
+    if r.status_code == 202:
+        return {"status": "pending", "signer_status": a.get("status"), "verification": a.get("verification"),
+                "detail": a.get("reason")}
+    detail = a.get("detail")
+    if r.status_code == 409:
+        reasons = a.get("refused") or ([detail] if isinstance(detail, str) else (detail or {}).get("refused")) or [r.text[:300]]
+        return {"status": "refused", "signer_status": a.get("status"), "refused": [redact(str(x))[:400] for x in reasons],
+                "verification": a.get("verification")}
+    if r.status_code == 503:
+        return {"status": "failed", "retryable": True, "detail": redact(str(a.get("reason") or detail or r.text))[:400],
+                "verification": a.get("verification")}
+    return {"status": "unavailable", "detail": f"signer answered HTTP {r.status_code}: {redact(str(detail or r.text))[:300]}"}
 
 
 # --------------------------------------------------------------------------- settlement & payouts

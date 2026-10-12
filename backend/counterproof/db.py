@@ -81,7 +81,7 @@ def row(r: sqlite3.Row | None) -> dict | None:
         return None
     d = dict(r)
     for k in ("json", "params", "result", "record", "budget", "provenance", "local_check", "summary",
-              "typed_data", "detail"):
+              "typed_data", "detail", "verification"):
         if k in d and isinstance(d[k], str):
             try:
                 d[k] = json.loads(d[k])
@@ -116,13 +116,38 @@ class ArtifactStore:
         return self.root / f"{hexpart}.json"
 
     def put(self, value: Any) -> str:
+        """Write once. Several processes (API, workers, signer) may store the same digest at
+        the same time: each writes its own uniquely named temporary file, and a writer that
+        loses the race (Windows refuses to replace a file another process has open) accepts
+        the file already there when it holds exactly the same bytes."""
         d = digest(value)
         p = self._path(d)
-        if not p.exists():
-            tmp = p.with_suffix(".tmp")
-            tmp.write_bytes(canonical_json(value))
-            tmp.replace(p)
+        if p.exists():
+            return d
+        data = canonical_json(value)
+        tmp = p.with_name(f"{p.stem}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_bytes(data)
+            for attempt in range(6):
+                try:
+                    tmp.replace(p)
+                    break
+                except PermissionError:
+                    if self._holds(p, data):
+                        break
+                    if attempt == 5:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+        finally:
+            tmp.unlink(missing_ok=True)
         return d
+
+    @staticmethod
+    def _holds(p: Path, data: bytes) -> bool:
+        try:
+            return p.read_bytes() == data
+        except OSError:
+            return False
 
     def get(self, d: str) -> Any:
         p = self._path(d)
