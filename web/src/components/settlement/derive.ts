@@ -10,12 +10,20 @@ import {
   type ChainTransaction,
   type ChainTxKind,
   type ChallengeView,
+  type Digest,
   type Evaluation,
+  type Job,
   type JsonValue,
+  type OnchainChallenge,
   type Settlement,
   type SettlementAttestation,
+  type SignerVerification,
 } from "@/lib/api";
 import { sameHex } from "@/lib/format";
+import { isJobActive } from "@/lib/status";
+
+/** The backend renews an attestation only once it has less than this left (chain.ATTESTATION_MARGIN). */
+export const RENEW_MARGIN_S = 300;
 
 /** Recorded transactions of one kind, newest first. */
 export function txsOfKind(txs: ChainTransaction[], kind: ChainTxKind): ChainTransaction[] {
@@ -50,7 +58,76 @@ export function currentAttestation(settlement: Settlement, view: ChallengeView):
     signer: row.signer,
     expiry: row.expiry,
     evaluation_id: row.evaluation_id,
+    id: row.id,
+    evidence_digest: row.evidence_digest ?? null,
+    verification: row.verification ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at ?? null,
   };
+}
+
+/**
+ * What the attested `evidenceDigest` should be compared with. Attestations from the current
+ * signer carry the digest of the signer's OWN verification bundle (its fresh replays of the
+ * committed candidate); older ones (e.g. the recorded testnet run) signed the worker's
+ * evaluation digest, so they are compared with that.
+ */
+export function attestedEvidence(
+  attestation: Pick<SettlementAttestation, "evidence_digest"> | null | undefined,
+  evaluationDigest: Digest | null | undefined,
+): { digest: Digest | null; source: "signer" | "evaluation" } {
+  if (attestation?.evidence_digest) return { digest: attestation.evidence_digest, source: "signer" };
+  return { digest: evaluationDigest ?? null, source: "evaluation" };
+}
+
+/** "2 of 3 fresh replays by the signer violated the rule (2 required)". */
+export function verificationSummary(v: SignerVerification | null | undefined): string | null {
+  if (!v || v.replays == null) return null;
+  const kind = v.mode === "stochastic" ? "fresh live-model" : "fresh";
+  if (v.status === "verifying") {
+    return `the signer is running ${v.replays} ${kind} replay${v.replays === 1 ? "" : "s"} of its own${
+      v.replays_done ? ` (${v.replays_done} done)` : ""
+    }; at least ${v.required ?? "?"} must violate the rule`;
+  }
+  if (v.violated == null) return null;
+  return `${v.violated} of ${v.replays} ${kind} replay${v.replays === 1 ? "" : "s"} by the signer violated the rule (${v.required ?? "?"} required)`;
+}
+
+/** True while an attestation job is queued or running (the signer may be replaying). */
+export function isAttestationJobActive(job: Job | null | undefined): boolean {
+  return isJobActive(job);
+}
+
+/** What the latest attestation job last heard from the signer (the job records it as it polls). */
+export function attestationJobOutcome(job: Job | null | undefined): {
+  status: string | null;
+  verification: SignerVerification | null;
+  detail: string | null;
+} {
+  const r = (job?.result ?? null) as Record<string, unknown> | null;
+  const status = r && typeof r.status === "string" ? r.status : null;
+  const verification = r && r.verification && typeof r.verification === "object" ? (r.verification as unknown as SignerVerification) : null;
+  const refused = r && Array.isArray(r.refused) ? (r.refused as unknown[]).map(String).join("; ") : null;
+  const detail = refused || (r && typeof r.detail === "string" ? r.detail : null);
+  return { status, verification, detail };
+}
+
+/**
+ * An expired (or nearly expired) attestation can be renewed while the challenge is still
+ * funded and its settlement deadline has not passed: the signer re-signs the same message
+ * with a later expiry, capped at the deadline (so one already ending at the deadline cannot
+ * be extended).
+ */
+export function canRenewAttestation(
+  view: Pick<ChallengeView, "status" | "spec">,
+  attestation: Pick<SettlementAttestation, "expiry"> | null,
+  onchain: Pick<OnchainChallenge, "status" | "settlement_deadline"> | null,
+  nowSec: number | null,
+): boolean {
+  if (!attestation || nowSec === null || view.status !== "funded") return false;
+  if (onchain && onchain.status !== "funded") return false;
+  const deadline = onchain?.settlement_deadline ?? view.spec.deadlines.settlement_deadline;
+  return nowSec <= deadline && attestation.expiry < deadline && attestation.expiry - nowSec <= RENEW_MARGIN_S;
 }
 
 /**
@@ -96,11 +173,13 @@ export function settlementActivity(entries: ActivityEntry[]): ActivityEntry[] {
   return entries.filter((e) => SETTLEMENT_ACTIVITY.some((p) => e.kind.startsWith(p)));
 }
 
-/** Latest backend note about an attestation that could not be obtained yet. */
+const ATTESTATION_NOTES = ["attestation.pending", "attestation.refused", "attestation.failed"];
+
+/** Latest backend note about an attestation that could not be obtained (pending, refused or failed). */
 export function latestAttestationNote(entries: ActivityEntry[], evaluationId: string | undefined): ActivityEntry | null {
   return (
     [...entries]
-      .filter((e) => e.kind === "attestation.pending" && (!evaluationId || e.ref === evaluationId))
+      .filter((e) => ATTESTATION_NOTES.includes(e.kind) && (!evaluationId || e.ref === evaluationId))
       .sort((a, b) => b.created_at - a.created_at || b.id - a.id)[0] ?? null
   );
 }

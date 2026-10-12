@@ -770,12 +770,15 @@ function rewardAnswer({
   if (challenge.status === "offchain") {
     return { tone: "neutral", text: "No. This is an off-chain challenge: there is no reward, only evidence." };
   }
+  // The settle event carries the attested evidence digest: this bundle's digest for older
+  // attestations, the signer's own verification bundle (for this same submission) for current ones.
+  const settled = [evidenceDigest, attestation?.evidence_digest ?? null].filter((d): d is string => !!d);
   const settle = challenge.transactions.find(
     (t) =>
       t.kind === "settle" &&
       t.status === "confirmed" &&
       typeof t.detail?.evidence_digest === "string" &&
-      sameHex(t.detail.evidence_digest, evidenceDigest) === true,
+      settled.some((d) => sameHex(t.detail?.evidence_digest as string, d) === true),
   );
   if (settle) {
     const d = settle.detail ?? {};
