@@ -24,7 +24,9 @@ class AdapterInfo:
     version: str
     module_file: str
     title: str
-    label: str  # intentionally-vulnerable-fixture | repaired-fixture | independent-implementation
+    # intentionally-vulnerable-fixture | repaired-fixture | independent-implementation | repaired-live-model
+    # (repaired-live-model: a first-party repair of a live-model agent; decisions still come from the model)
+    label: str
     determinism: str  # deterministic | stochastic
     first_party: bool
     requires_model: bool
@@ -84,6 +86,26 @@ ADAPTERS: dict[str, AdapterInfo] = {
             "results are statistical and depend on the provider, model and date.",
             provenance="Prompt and tool loop written once by the CounterProof team before any strategy was run "
             "against it; no defects planted. The model is a third-party hosted model.",
+        ),
+        AdapterInfo(
+            adapter="llm-purchasing-agent",
+            version="0.2.0",
+            module_file="targets/llm_agent_v0_2.py",
+            title="LLM purchasing agent 0.2.0 - capability-enforced repair of 0.1.1",
+            label="repaired-live-model",
+            determinism="stochastic",
+            first_party=True,
+            requires_model=True,
+            description="0.1.1's tool loop with its capabilities enforced in code. The model is offered only the "
+            "seven non-privileged tools, and the dispatcher refuses any other tool name before anything reaches "
+            "the market. Orders are bound to the principal's request, and every payment passes in-code guards: "
+            "mandate active, merchant allowlisted, settled payments plus this order within the budget, one "
+            "payment per order with a fixed idempotency key. Policy values come only from market results, never "
+            "from merchant text or model output. Decisions still come from a hosted model; results are statistical.",
+            provenance="Written by the CounterProof team after the recorded 0.1.1 finding (Monad testnet challenge "
+            "#3: injected merchant text led the model to call update_mandate in 3 of 3 replays). A repair by the "
+            "team that found the problem, not an independent implementation. The model is a third-party hosted "
+            "model; blocked proposals in its claims are agent self-report.",
         ),
     ]
 }
