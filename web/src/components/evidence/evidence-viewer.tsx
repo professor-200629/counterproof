@@ -48,6 +48,7 @@ import { WhoChecked } from "./who-checked";
 import { useSignatureBinding, type SignatureBinding } from "@/components/settlement/use-recovered-signer";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { useCompareLinkLabel } from "@/components/compare/compare-link-label";
 
 const NAV = [
   ["answers", "At a glance"],
@@ -274,6 +275,12 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
   const actions = bundle.candidate?.actions ?? [];
   const shrunk = !!bundle.candidate?.provenance.note && /shrunk/i.test(bundle.candidate.provenance.note);
   const reward = rewardAnswer({ evaluation, bundle, challenge, attestation, evidenceDigest });
+  const compareLabel = useCompareLinkLabel(
+    evaluation.challenge_id,
+    challenge?.spec.target ?? bundle.target,
+    "Replay against a repaired version",
+    evaluation.candidate_id,
+  );
   const binding = useSignatureBinding(attestation, bundle.evaluator.address);
   const deterministic = bundle.target.determinism === "deterministic";
   const specLink = (
@@ -557,7 +564,7 @@ function EvidenceBody({ evaluation, bundle, challenge, challengeError, attestati
                         size="sm"
                         icon={<GitCompare />}
                       >
-                        {SNAPSHOT_MODE ? "Before / after (recorded)" : "Replay against a repaired version"}
+                        {compareLabel}
                       </ButtonLink>
                     ) : null}
                   </div>

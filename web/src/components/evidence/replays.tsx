@@ -237,7 +237,8 @@ function WitnessNote({
   );
 }
 
-function ReplayDetail({
+/** One replay's tab: its facts, its ledger with its own witness rows marked, its trace and claims. */
+export function ReplayDetail({
   replay,
   witness,
   checkerSeqs,

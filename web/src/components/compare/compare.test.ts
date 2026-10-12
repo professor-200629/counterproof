@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import type { ChallengeView, EvidenceBundle, LedgerEvent, Regression, SpecRule, Target } from "@/lib/api";
 import { render } from "@/test/render";
-import { defaultTargetKey, repairTargets, Verdict } from "./compare-view";
+import { compareLinkLabel } from "./compare-link-label";
+import { compareDescription, defaultTargetKey, isRepairOf, relationOf, repairTargets, Verdict } from "./compare-view";
 import { ledgerFacts, privilegedAttempts, refusedCalls, sameActions, witnessSeqs } from "./ledger-facts";
 import { RegressionList } from "./regression-parts";
 
@@ -178,7 +179,7 @@ describe("Verdict wording", () => {
         regression: REG("ref-purchasing-agent@1.1.0", "not_reproduced"),
         ruleId: "R5",
         adapter: "llm-purchasing-agent",
-        sameFamily: false,
+        relation: "other-family",
         label: "repaired-fixture",
         after: null,
       }),
@@ -193,7 +194,7 @@ describe("Verdict wording", () => {
         regression: REG("llm-purchasing-agent@0.1.2", "not_reproduced"),
         ruleId: "R5",
         adapter: "llm-purchasing-agent",
-        sameFamily: true,
+        relation: "repair",
         label: "repaired-live-model",
         after: afterBundle("stochastic", [false, false, false]),
       }),
@@ -209,7 +210,7 @@ describe("Verdict wording", () => {
         regression: REG("ref-purchasing-agent@1.1.0", "not_reproduced"),
         ruleId: "R1",
         adapter: "ref-purchasing-agent",
-        sameFamily: true,
+        relation: "repair",
         label: "repaired-fixture",
         after: afterBundle("deterministic", [false, false]),
       }),
@@ -219,9 +220,91 @@ describe("Verdict wording", () => {
 
   it("marks recorded regressions on another adapter in the history table", () => {
     const query = { data: [REG("ref-purchasing-agent@1.1.0", "not_reproduced")], isPending: false, isError: false, error: null, refetch: () => {} };
-    const { text } = render(createElement(RegressionList, { query, selectedId: null, onSelect: () => {}, originalAdapter: "llm-purchasing-agent" }));
+    const { text } = render(
+      createElement(RegressionList, { query, selectedId: null, onSelect: () => {}, original: { adapter: "llm-purchasing-agent", version: "0.1.1" } }),
+    );
     expect(text).toContain("different agent family");
-    const same = render(createElement(RegressionList, { query, selectedId: null, onSelect: () => {}, originalAdapter: "ref-purchasing-agent" }));
+    const same = render(
+      createElement(RegressionList, { query, selectedId: null, onSelect: () => {}, original: { adapter: "ref-purchasing-agent", version: "1.0.0" } }),
+    );
     expect(same.text).not.toContain("different agent family");
+    expect(same.text).not.toContain("not a repair");
+  });
+
+  it("marks a recorded re-run of the original version as not a repair in the history table", () => {
+    const query = { data: [REG("llm-purchasing-agent@0.1.1", "not_reproduced")], isPending: false, isError: false, error: null, refetch: () => {} };
+    const { text } = render(
+      createElement(RegressionList, { query, selectedId: null, onSelect: () => {}, original: { adapter: "llm-purchasing-agent", version: "0.1.1" } }),
+    );
+    expect(text).toContain("same version re-run, not a repair");
+    expect(text).not.toContain("different agent family");
+  });
+
+  it("a re-run of the original version is never read as a repair, whatever its outcome", () => {
+    for (const outcome of ["not_reproduced", "verified_violation"] as const) {
+      const { text } = render(
+        createElement(Verdict, {
+          regression: REG("llm-purchasing-agent@0.1.1", outcome),
+          ruleId: "R5",
+          adapter: "llm-purchasing-agent",
+          relation: "same-version",
+          label: "independent-implementation",
+          after: afterBundle("stochastic", outcome === "verified_violation" ? [true, true, false] : [false, false, false]),
+        }),
+      );
+      expect(text).toContain("llm-purchasing-agent@0.1.1 is the original version re-run, not a repair");
+      expect(text).toContain("says nothing about a repair");
+      expect(text).toContain("bounded statistical evidence");
+      expect(text).not.toMatch(/repaired version resisted|repair holds|repair did not hold/);
+    }
+  });
+
+  it("for a live-model repair that still violates, gives the counts as statistical evidence", () => {
+    const { text } = render(
+      createElement(Verdict, {
+        regression: REG("llm-purchasing-agent@0.1.2", "verified_violation"),
+        ruleId: "R5",
+        adapter: "llm-purchasing-agent",
+        relation: "repair",
+        label: "repaired-live-model",
+        after: afterBundle("stochastic", [true, false, true]),
+      }),
+    );
+    expect(text).toContain("Observed on llm-purchasing-agent@0.1.2: R5 was reproduced");
+    expect(text).toContain("R5 was violated in 2 of 3 fresh replays on llm-purchasing-agent@0.1.2");
+    expect(text).toContain("bounded statistical evidence");
+    expect(text).not.toContain("still violates R5");
+  });
+});
+
+describe("which recorded replay counts as the repair", () => {
+  const live = viewOf("llm-purchasing-agent", "0.1.1");
+  it("only another version of the same adapter; the original key again is a re-run, another adapter a different agent", () => {
+    expect(relationOf(REG("llm-purchasing-agent@0.1.2", "not_reproduced"), live)).toBe("repair");
+    expect(relationOf(REG("llm-purchasing-agent@0.1.1", "not_reproduced"), live)).toBe("same-version");
+    expect(relationOf(REG("ref-purchasing-agent@1.1.0", "not_reproduced"), live)).toBe("other-family");
+    expect(isRepairOf(REG("llm-purchasing-agent@0.1.1", "not_reproduced"), live)).toBe(false);
+    expect(isRepairOf(REG("llm-purchasing-agent@0.1.2", "not_reproduced"), live)).toBe(true);
+  });
+});
+
+describe("before / after wording in a recording", () => {
+  const live = { id: 3, spec: { target: { adapter: "llm-purchasing-agent", version: "0.1.1" } } } as unknown as ChallengeView;
+
+  it("the page's lead sentence says plainly when no repaired version was replayed", () => {
+    expect(compareDescription(live, [], true)).toContain("No other version of llm-purchasing-agent had replayed it when the snapshot was recorded");
+    // A re-run of the original version or another family does not make it a recorded repair.
+    const notRepairs = [REG("llm-purchasing-agent@0.1.1", "not_reproduced"), REG("ref-purchasing-agent@1.1.0", "not_reproduced")];
+    expect(compareDescription(live, notRepairs, true)).toContain("so no repair is shown");
+    expect(compareDescription(live, [REG("llm-purchasing-agent@0.1.2", "not_reproduced")], true)).toContain(
+      "replayed by the same evaluator against another version of llm-purchasing-agent",
+    );
+  });
+
+  it("entry links say whether a repair was recorded, and name the action when live", () => {
+    expect(compareLinkLabel(false, "Repair and regression", true)).toBe("Before / after (no repair recorded)");
+    expect(compareLinkLabel(true, "Repair and regression", true)).toBe("Before / after (repair recorded)");
+    expect(compareLinkLabel(null, "Repair and regression", true)).toBe("Before / after");
+    expect(compareLinkLabel(false, "Repair and regression", false)).toBe("Repair and regression");
   });
 });

@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 import { POLL_MS, useRegressionExport } from "@/lib/queries";
 import { isRegressionActive } from "@/lib/status";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
-import { adapterOfKey } from "@/lib/target-labels";
+import { adapterOfKey, replayRelation } from "@/lib/target-labels";
 
 // ---------------------------------------------------------------------------- in progress
 /** A queued / replaying regression: only what the backend reports, no estimated progress. */
@@ -117,12 +117,15 @@ export interface RegressionListProps {
   query: { data?: Regression[]; isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
   selectedId: string | null;
   onSelect: (r: Regression) => void;
-  /** The challenge's own agent family: rows replayed against another adapter are marked as such. */
-  originalAdapter?: string;
+  /**
+   * The challenge's own target: rows replayed against another adapter, or against the original
+   * version itself, are marked as not being a repair.
+   */
+  original?: { adapter: string; version: string };
 }
 
 /** Every regression replay recorded for this challenge, newest first. */
-export function RegressionList({ query, selectedId, onSelect, originalAdapter }: RegressionListProps) {
+export function RegressionList({ query, selectedId, onSelect, original }: RegressionListProps) {
   if (query.isPending) return <Loading label="previous regressions" rows={3} card />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} compact />;
   const regs = query.data ?? [];
@@ -157,6 +160,7 @@ export function RegressionList({ query, selectedId, onSelect, originalAdapter }:
         {regs.map((r) => {
           const selected = r.id === selectedId;
           const finished = !!r.outcome && !isRegressionActive(r.status);
+          const relation = original ? replayRelation(r.target_key, original) : "repair";
           return (
             <TR key={r.id} className={cn(selected && "bg-raised/70")} aria-current={selected ? "true" : undefined}>
               <TD mono>
@@ -169,14 +173,23 @@ export function RegressionList({ query, selectedId, onSelect, originalAdapter }:
               </TD>
               <TD mono>
                 {r.target_key}
-                {originalAdapter && adapterOfKey(r.target_key) !== originalAdapter ? (
+                {original && relation === "other-family" ? (
                   <Badge
                     tone="warn"
                     size="sm"
                     className="ml-2 font-sans"
-                    title={`Replayed against another agent (adapter ${adapterOfKey(r.target_key) ?? "?"}), not a version of ${originalAdapter}: not a repair of this agent.`}
+                    title={`Replayed against another agent (adapter ${adapterOfKey(r.target_key) ?? "?"}), not a version of ${original.adapter}: not a repair of this agent.`}
                   >
                     different agent family
+                  </Badge>
+                ) : original && relation === "same-version" ? (
+                  <Badge
+                    tone="neutral"
+                    size="sm"
+                    className="ml-2 font-sans"
+                    title={`Replayed against ${original.adapter}@${original.version} again, the original version itself: a re-run of the unchanged agent, not a repair.`}
+                  >
+                    same version re-run, not a repair
                   </Badge>
                 ) : null}
               </TD>

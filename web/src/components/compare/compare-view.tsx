@@ -21,7 +21,15 @@ import {
   type TargetLabel,
 } from "@/lib/api";
 import { plural } from "@/lib/format";
-import { adapterOfKey, compareVersions, isLiveModelLabel, isRepairedLabel, targetLabelText } from "@/lib/target-labels";
+import {
+  adapterOfKey,
+  compareVersions,
+  isLiveModelLabel,
+  isRepairedLabel,
+  replayRelation,
+  targetLabelText,
+  type ReplayRelation,
+} from "@/lib/target-labels";
 import {
   useCandidate,
   useChallenge,
@@ -73,20 +81,48 @@ export function defaultTargetKey(targets: Target[], view: Pick<ChallengeView, "s
   return repairTargets(targets, view)[0]?.key ?? null;
 }
 
-/** True when a regression replayed this challenge's counterexample on the same agent family. */
-export function isSameFamily(regression: Pick<Regression, "target_key">, view: Pick<ChallengeView, "spec">): boolean {
-  return adapterOfKey(regression.target_key) === view.spec.target.adapter;
+/** How a recorded regression's target relates to this challenge's own target (see replayRelation). */
+export function relationOf(regression: Pick<Regression, "target_key">, view: Pick<ChallengeView, "spec">): ReplayRelation {
+  return replayRelation(regression.target_key, view.spec.target);
+}
+
+/**
+ * True only for a replay on ANOTHER version of the same adapter: the only replay that can stand
+ * as "the repaired version". The original version re-run is not a repair, nor is another adapter.
+ */
+export function isRepairOf(regression: Pick<Regression, "target_key">, view: Pick<ChallengeView, "spec">): boolean {
+  return relationOf(regression, view) === "repair";
+}
+
+/**
+ * The page's lead sentence. In a recording it says whether a repaired version was actually
+ * replayed, so the page never announces a before / after that was not recorded.
+ */
+export function compareDescription(
+  view: Pick<ChallengeView, "id" | "spec"> | undefined,
+  regs: Pick<Regression, "target_key" | "source_challenge_id">[] | undefined,
+  snapshot: boolean = SNAPSHOT_MODE,
+): string {
+  if (!snapshot) {
+    return "The exact action sequence that broke the original version, replayed by the same evaluator against another version of the same agent, then exported as a regression test.";
+  }
+  if (!view || !regs) return "The exact action sequence that broke the original version, and any recorded replay of it against another version.";
+  const adapter = view.spec.target.adapter;
+  return regs.some((r) => r.source_challenge_id === view.id && isRepairOf(r, view))
+    ? `The exact action sequence that broke the original version, replayed by the same evaluator against another version of ${adapter} and exported as a regression test, as recorded.`
+    : `The exact action sequence that broke the original version. No other version of ${adapter} had replayed it when the snapshot was recorded, so no repair is shown; below is the original evidence.`;
 }
 
 export function CompareView({ challengeId, initial }: { challengeId: string; initial: CompareInitial }) {
   const viewQ = useChallenge(challengeId);
   const view = viewQ.data;
+  const regsQ = useChallengeRegressions(view ? challengeId : null);
   const breadcrumb = <Breadcrumbs items={challengeCrumbs(challengeId, view?.spec.title, "Before / after")} />;
   const header = (
     <PageHeader
       title="Before / after"
       breadcrumb={breadcrumb}
-      description="The exact action sequence that broke the original version, replayed by the same evaluator against a new version, then exported as a regression test."
+      description={compareDescription(view, regsQ.data)}
       meta={
         view ? (
           <>
@@ -132,10 +168,16 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
   const [targetPick, setTargetPick] = useState<string | null>(initial.target ?? null);
   const [regressionPick, setRegressionPick] = useState<string | null>(initial.regression ?? null);
 
+  const regs = regsQ.data ?? [];
+  // A repair is another version of the same adapter; see isRepairOf.
+  const repairsOf = (cid: string | null) => regs.filter((r) => r.source_candidate_id === cid && isRepairOf(r, view));
+
   const verified: CandidateSummary[] = view.candidates
     .filter((c) => c.status === "verified_violation")
     .sort((a, b) => b.created_at - a.created_at);
-  const candidateId = candidatePick && verified.some((c) => c.id === candidatePick) ? candidatePick : (verified[0]?.id ?? null);
+  // Default: the newest verified counterexample that has a recorded repair replay, else the newest.
+  const defaultCandidate = verified.find((c) => repairsOf(c.id).length > 0)?.id ?? verified[0]?.id ?? null;
+  const candidateId = candidatePick && verified.some((c) => c.id === candidatePick) ? candidatePick : defaultCandidate;
 
   const targets = targetsQ.data ?? [];
   // Only versions of the same agent family are offered: another adapter is not this agent's repair.
@@ -144,11 +186,11 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
   const adapter = view.spec.target.adapter;
   const originalKey = `${adapter}@${view.spec.target.version}`;
 
-  const regs = regsQ.data ?? [];
-  // By default only a same-family replay fills the "After" column; a recorded replay against
-  // another agent family is listed below (labelled) and shown only when picked explicitly.
-  const regressionId =
-    regressionPick ?? regs.find((r) => r.source_candidate_id === candidateId && isSameFamily(r, view))?.id ?? null;
+  // By default only a repair (another version of the same adapter) fills the "After" column; a
+  // recorded re-run of the original version or a replay against another agent family is listed
+  // below (labelled) and shown only when picked explicitly.
+  const candidateRepairs = repairsOf(candidateId);
+  const regressionId = regressionPick ?? candidateRepairs[0]?.id ?? null;
   const regressionQ = useRegression(regressionId);
   const regressionRaw: Regression | null = regressionQ.data ?? regs.find((r) => r.id === regressionId) ?? null;
   // A regression id from the URL that belongs to another challenge is ignored.
@@ -187,7 +229,7 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
 
   const selectedTarget = options.find((t) => t.key === targetKey) ?? null;
   const active = !!regression && isRegressionActive(regression.status);
-  const sameFamily = !!regression && isSameFamily(regression, view);
+  const relation: ReplayRelation | null = regression ? relationOf(regression, view) : null;
   const beforeActions = beforeQ.data?.candidate?.actions ?? candidateQ.data?.json.actions ?? null;
   const afterActions = afterQ.data?.candidate?.actions ?? null;
 
@@ -196,9 +238,13 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
       <Section
         title={SNAPSHOT_MODE ? "Verified counterexample" : "Replay a verified counterexample"}
         description={
-          SNAPSHOT_MODE
-            ? "The evaluator replayed the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against another version. Below is what it recorded. No reward is involved."
-            : "The evaluator replays the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against the version you choose. No reward is involved."
+          !SNAPSHOT_MODE
+            ? "The evaluator replays the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against the version you choose. No reward is involved."
+            : !regsQ.data
+              ? "The evaluator's recorded replays of this counterexample. No reward is involved."
+              : candidateRepairs.length > 0
+                ? `The evaluator replayed the identical action sequence in a fresh synthetic marketplace, with the same rules and initial state, against another version of ${adapter}. Below is what it recorded. No reward is involved.`
+                : `The verified action sequence and the original evaluation, as recorded. No repaired version had replayed it${regression ? "; the other replay shown is not a repair" : ", so the After column stays empty"}. No reward is involved.`
         }
       >
         {verified.length === 0 ? (
@@ -295,7 +341,7 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
       {verified.length > 0 || regression ? (
         <Section
           title="Comparison"
-          description="Left: the original, independently verified result. Right: the same sequence on the new version. Every value comes from the two evidence bundles."
+          description="Left: the original, independently verified result. Right: the same sequence on the replayed version; only another version of the same agent counts as a repair. Every value comes from the two evidence bundles."
         >
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,19rem)_minmax(0,1fr)]">
             <VersionColumn
@@ -317,13 +363,17 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
               initialState={view.spec.initial_state}
             />
             <VersionColumn
-              eyebrow={regression && !sameFamily ? "Different agent family" : "After"}
+              eyebrow={
+                relation === "other-family" ? "Different agent family" : relation === "same-version" ? "Same version re-run, not a repair" : "After"
+              }
               title={
-                regression
-                  ? sameFamily
+                !regression
+                  ? "Repaired version: none replayed"
+                  : relation === "repair"
                     ? `Regression on ${regression.target_key}`
-                    : `${regression.target_key} - not a version of ${adapter}`
-                  : `Repaired version of ${adapter}`
+                    : relation === "same-version"
+                      ? `${regression.target_key} again - the original version`
+                      : `${regression.target_key} - not a version of ${adapter}`
               }
               status={regression?.status ?? null}
               domain="regression"
@@ -356,7 +406,7 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
               regression={regression}
               ruleId={ruleId}
               adapter={adapter}
-              sameFamily={sameFamily}
+              relation={relation ?? "repair"}
               label={afterQ.data?.target.label ?? targets.find((t) => t.key === regression.target_key)?.label ?? null}
               after={afterQ.data ?? null}
             />
@@ -370,10 +420,13 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
         </Section>
       ) : null}
 
-      <Section title="Previous regressions" description="Every replay of this challenge's counterexamples against another version, newest first.">
+      <Section
+        title="Previous regressions"
+        description="Every recorded replay of this challenge's counterexamples, newest first. Only a replay on another version of the same agent counts as a repair; the others are marked."
+      >
         <RegressionList
           query={regsQ}
-          originalAdapter={adapter}
+          original={{ adapter, version: view.spec.target.version }}
           selectedId={regressionId}
           onSelect={(r) => {
             setRegressionPick(r.id);
@@ -387,15 +440,15 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
 
 /**
  * The honest reading of the regression result. "The repaired version resisted" is said only
- * for a replay on the same agent family against a deterministic target; a live model gets
- * what was observed, with replay counts, as bounded statistical evidence; a different agent
- * family is never called a repair.
+ * for a replay on ANOTHER version of the same agent family against a deterministic target; a
+ * live model gets what was observed, with replay counts, as bounded statistical evidence; a
+ * re-run of the original version and a different agent family are never called a repair.
  */
 export function Verdict({
   regression,
   ruleId,
   adapter,
-  sameFamily,
+  relation,
   label,
   after,
 }: {
@@ -403,7 +456,8 @@ export function Verdict({
   ruleId: string | null;
   /** The challenge's own agent family (adapter). */
   adapter: string;
-  sameFamily: boolean;
+  /** How the replayed target relates to the challenge's target (see replayRelation). */
+  relation: ReplayRelation;
   label: string | null;
   /** The regression's evidence bundle, for replay counts (null while it loads). */
   after: Pick<EvidenceBundle, "replays" | "reproducibility" | "target"> | null;
@@ -413,6 +467,7 @@ export function Verdict({
   const n = after?.replays.length ?? 0;
   const violated = after ? after.replays.filter((r) => r.claimed_rule_violated).length : null;
   const stochastic = after?.target.determinism === "stochastic" || isLiveModelLabel(label);
+  const outcomeText = statusMeta(regression.outcome ?? regression.status, "regression").label.toLowerCase();
   const counts =
     after && n > 0 ? (
       <>
@@ -424,15 +479,30 @@ export function Verdict({
         {after.reproducibility.replays}).
       </>
     ) : null;
+  const statistical = stochastic
+    ? " The decisions come from a hosted language model, so these counts are bounded statistical evidence about this model, this sequence and this date."
+    : "";
 
-  if (!sameFamily) {
+  if (relation === "other-family") {
     return (
       <Callout tone="warn" icon={<ShieldQuestion />} title={`${key} is a different agent family, not a repair of ${adapter}`} className="mt-4" role="status">
         <p>
           This replay ran the same sequence against <span className="font-mono text-xs">{adapterOfKey(key)}</span>, another agent
-          (adapter), not a version of <span className="font-mono text-xs">{adapter}</span>. Its outcome (
-          {statusMeta(regression.outcome ?? regression.status, "regression").label.toLowerCase()}) says nothing about whether{" "}
-          {adapter} was fixed. {counts}
+          (adapter), not a version of <span className="font-mono text-xs">{adapter}</span>. Its outcome ({outcomeText}) says nothing
+          about whether {adapter} was fixed. {counts}
+        </p>
+      </Callout>
+    );
+  }
+  if (relation === "same-version") {
+    return (
+      <Callout tone="warn" icon={<ShieldQuestion />} title={`${key} is the original version re-run, not a repair`} className="mt-4" role="status">
+        <p>
+          This replay ran the same sequence against the original version again, not against a changed version of{" "}
+          <span className="font-mono text-xs">{adapter}</span>. Its outcome ({outcomeText}) says nothing about a repair.
+          {stochastic ? " A live model's decisions vary between runs, so a re-run of the unchanged agent can come out differently." : ""}{" "}
+          {counts}
+          {statistical}
         </p>
       </Callout>
     );
@@ -462,6 +532,16 @@ export function Verdict({
     );
   }
   if (regression.outcome === "verified_violation") {
+    if (stochastic) {
+      return (
+        <Callout tone="bad" icon={<ShieldAlert />} title={`Observed on ${key}: ${rule} was reproduced`} className="mt-4" role="status">
+          <p>
+            {counts ?? "Replay counts are in the evidence bundle."} The repair did not hold for this counterexample in these
+            replays.{statistical}
+          </p>
+        </Callout>
+      );
+    }
     return (
       <Callout tone="bad" icon={<ShieldAlert />} title={`${key} still violates ${rule}`} className="mt-4" role="status">
         The same action sequence still breaks the rule on this version of {adapter}. The repair did not hold for this
@@ -474,6 +554,7 @@ export function Verdict({
       <Callout tone="warn" icon={<ShieldQuestion />} title="No clear result for this version" role="status">
         The replay ended as &quot;{regression.outcome ?? regression.status}&quot;. That is neither a pass nor a reproduced violation; see
         the evidence bundle for the evaluator&apos;s reason. {counts}
+        {statistical}
       </Callout>
       <TrustStatement kind="not-proof" />
     </div>

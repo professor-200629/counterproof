@@ -18,7 +18,7 @@ import {
   type SpecRule,
 } from "@/lib/api";
 import { sameHex } from "@/lib/format";
-import { adapterOfKey, isLiveModelLabel, isPlantedFixtureLabel } from "@/lib/target-labels";
+import { isLiveModelLabel, isPlantedFixtureLabel, replayRelation } from "@/lib/target-labels";
 import { privilegedAttempts, refusedCalls, type RefusedCall } from "@/components/compare/ledger-facts";
 import { sortNewest } from "./shared";
 
@@ -136,10 +136,8 @@ export function sameFamilyRegressions(
   view: Pick<ChallengeView, "id" | "spec">,
   candidateId?: string | null,
 ): Regression[] {
-  const adapter = view.spec.target.adapter;
-  const originalKey = `${adapter}@${view.spec.target.version}`;
   return (regs ?? [])
-    .filter((r) => r.source_challenge_id === view.id && adapterOfKey(r.target_key) === adapter && r.target_key !== originalKey)
+    .filter((r) => r.source_challenge_id === view.id && replayRelation(r.target_key, view.spec.target) === "repair")
     .sort(
       (a, b) =>
         Number(b.source_candidate_id === candidateId) - Number(a.source_candidate_id === candidateId) || b.created_at - a.created_at,

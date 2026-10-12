@@ -385,10 +385,18 @@ Render it with `<TxStatus {...tx} label="Funding" />` (see 9).
 - Model output never decides payouts: `<TrustStatement kind="llm" />` where model-assisted search is offered.
 - No invented data: every number, address, hash and message comes from the API or the chain.
 - Repairs are same-family only: "the repaired version" of a target is another version of the SAME
-  adapter (`compare-view.tsx` `repairTargets` / `defaultTargetKey`; the live picker offers nothing
-  else). A recorded regression on another adapter is labelled "different agent family" and never
-  read as a repair. For a live-model target, a regression result is stated with replay counts as
-  bounded statistical evidence, never "the repaired version resisted".
+  adapter (`lib/target-labels.ts` `replayRelation`: `repair` | `same-version` | `other-family`;
+  `compare-view.tsx` `repairTargets` / `defaultTargetKey` / `isRepairOf`; the live picker offers
+  nothing else). Only a `repair` fills the "After" column by default. A recorded regression on the
+  original key is labelled "same version re-run, not a repair", one on another adapter "different
+  agent family"; neither is ever read as a repair. For a live-model target, a regression result is
+  stated with replay counts as bounded statistical evidence (whatever the outcome), never "the
+  repaired version resisted". Regression status badges are neutral about which version ran
+  ("Not reproduced on replay" / "Violated on replay").
+- Before / after in a recording: the compare page's lead sentence (`compareDescription`) and the
+  entry links (`compare/compare-link-label.ts`, used by the challenge header, the findings tab and
+  the evidence page) say whether a repair was recorded ("Before / after (no repair recorded)");
+  they never announce a recorded comparison that does not exist. Live, the links name the action.
 - Witness rows: `verdict.witness_seqs` belongs to the FIRST violating replay only. Other replays
   mark their own witnesses, derived from their own ledger by `witnessSeqs` (`compare/ledger-facts.ts`,
   the backend checker's per-template rule); `evidence/replays.tsx` `replayWitness` says which.
@@ -475,6 +483,8 @@ every file of the sample snapshot reachable by the mapping) and `src/test/snapsh
 (views rendered from `public/snapshot` with the mode on: banner, no wallet, no action buttons,
 the recorded network's chain-read wording read from `manifest.json` (anvil or Monad testnet),
 static download links, the create explainer, the not-included 404, the featured finding with
-every value checked against the recorded files, and compare never offering another agent family
-as the repair). `src/lib/__tests__/judge-view.test.ts` covers label words, source / REPRODUCE
+every value checked against the recorded files (and pinned literally for the challenge #3 evidence
+digest), a recording without a live-model finding failing rather than skipping, compare never
+offering another agent family or a re-run of the original as the repair, the entry-link wording,
+each replay's witness rows rendered from its own ledger, and the evidence page's withdraw answer). `src/lib/__tests__/judge-view.test.ts` covers label words, source / REPRODUCE
 links, reward lookups, featured selection and per-replay witness rows.

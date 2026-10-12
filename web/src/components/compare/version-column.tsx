@@ -156,8 +156,8 @@ function BundleFacts({
       </dl>
       {facts.length ? (
         <p className="text-xs text-subtle">
-          Numbers above are computed on this page from replay 1&apos;s ledger in the evidence bundle; the outcome is the
-          evaluator&apos;s deterministic checker.
+          Numbers above are computed on this page from replay {first?.index ?? 0}&apos;s ledger in the evidence bundle; the outcome
+          is the evaluator&apos;s deterministic checker.
         </p>
       ) : null}
 

@@ -319,6 +319,33 @@ describe("compare /challenges/[id]/compare", () => {
     expect(html).not.toMatch(/value="llm-purchasing-agent@/);
   });
 
+  it("never takes a re-run of the original version as the repaired version", () => {
+    // Same adapter AND same version as the challenge's target: a re-run, not a repair.
+    const originalKey = `${view.spec.target.adapter}@${view.spec.target.version}`;
+    const rerun = { ...(regression as Record<string, unknown>), id: "reg_rerun_original", target_key: originalKey };
+    const primed = {
+      data: [
+        [qk.challenge("1"), view],
+        [qk.targets, targets],
+        [qk.challengeRegressions("1"), [rerun]],
+        [qk.regression("reg_rerun_original"), rerun],
+        [qk.evidence(evaluation.evidence_digest as string), bundle],
+      ] as [readonly unknown[], unknown][],
+    };
+    // By default the After column stays empty: no repaired version has been replayed.
+    const byDefault = render(el, primed).text;
+    expect(byDefault).toContain("Repaired version: none replayed");
+    expect(byDefault).toContain("No repaired version of this agent has been replayed yet");
+    expect(byDefault).toContain("same version re-run, not a repair");
+    expect(byDefault).not.toContain("resisted this sequence");
+    // Picked explicitly, it is labelled as the original version re-run.
+    const picked = render(createElement(CompareView, { challengeId: "1", initial: { regression: "reg_rerun_original" } }), primed).text;
+    expect(picked).toContain("Same version re-run, not a repair");
+    expect(picked).toContain(`${originalKey} is the original version re-run, not a repair`);
+    expect(picked).not.toContain("The repaired version resisted");
+    expect(picked).not.toMatch(/Regression on ref-purchasing-agent@1\.0\.0/);
+  });
+
   it("loading and not found", () => {
     expect(render(el).text).toContain("Loading challenge");
     expect(render(el, { errors: [[qk.challenge("1"), notFound("/challenges/1")]] }).text).toContain("Challenge #1 does not exist");

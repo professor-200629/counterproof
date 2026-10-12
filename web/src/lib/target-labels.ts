@@ -67,6 +67,20 @@ export function adapterOfKey(key: string | null | undefined): string | null {
   return at > 0 ? key.slice(0, at) : key;
 }
 
+/**
+ * How a replay's target relates to a challenge's own target:
+ * - "repair": the same adapter (agent family) at a DIFFERENT version - the only replay that can
+ *   stand as "the repaired version";
+ * - "same-version": the original key again - a re-run of the unchanged agent, never a repair;
+ * - "other-family": another adapter - a different agent, never this agent's repair.
+ */
+export type ReplayRelation = "repair" | "same-version" | "other-family";
+
+export function replayRelation(targetKey: string, original: { adapter: string; version: string }): ReplayRelation {
+  if (adapterOfKey(targetKey) !== original.adapter) return "other-family";
+  return targetKey === `${original.adapter}@${original.version}` ? "same-version" : "repair";
+}
+
 /** The version part of a target key `adapter@version`. */
 export function versionOfKey(key: string | null | undefined): string | null {
   if (!key) return null;

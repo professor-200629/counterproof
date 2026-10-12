@@ -430,7 +430,12 @@ function RepairFacts({ view, repair, ruleId }: { view: ChallengeView; repair: Re
             {violated} of {n}
           </span>{" "}
           fresh {plural(n, "replay")} of the same sequence on that version
-          {after.target.determinism === "stochastic" ? "; with a live model this is bounded statistical evidence, not proof the repair holds" : ""}.
+          {after.target.determinism !== "stochastic"
+            ? ""
+            : violated
+              ? "; the repair did not hold in these replays (with a live model, bounded statistical evidence)"
+              : "; with a live model this is bounded statistical evidence, not proof the repair holds"}
+          .
         </p>
       ) : afterQ.isError ? (
         <p className="text-muted">The regression&apos;s evidence bundle could not be loaded.</p>
