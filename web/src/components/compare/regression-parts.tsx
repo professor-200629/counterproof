@@ -102,6 +102,7 @@ export function ExportPanel({ regression }: { regression: Regression }) {
             ) : exp.data.last_result.outcome !== "not_reproduced" ? (
               <p className="text-sm text-warn">
                 The last replay had no clear verdict ({exp.data.last_result.outcome ?? "none"}), so the test&apos;s current status is unknown.
+                {exp.data.last_result.outcome_reason ? ` ${exp.data.last_result.outcome_reason}` : null}
               </p>
             ) : null}
           </>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerEvent, SpecRule } from "@/lib/api";
 import { ledgerFacts, sameActions } from "./ledger-facts";
+import { unclearRegressionText } from "./regression-reading";
 
 let seq = 0;
 function ev(type: string, data: LedgerEvent["data"]): LedgerEvent {
@@ -58,5 +59,23 @@ describe("sameActions", () => {
     expect(sameActions(a, b)).toBe(true);
     expect(sameActions(a, [{ ...b[0], qty: 4 }])).toBe(false);
     expect(sameActions(a, null)).toBe(false);
+  });
+});
+
+describe("unclearRegressionText", () => {
+  it("gives the backend's reason for an unclear regression instead of the evaluator's verdict", () => {
+    const reason =
+      "The rule was not violated in any of 3 replays, but only 1 completed; 2 ended when the provider rejected the " +
+      "model's generation before the agent saw it. A repair is confirmed only when every replay completes.";
+    const text = unclearRegressionText({ outcome: "inconclusive", status: "inconclusive", outcome_reason: reason });
+    expect(text).toBe(`The replay ended as "inconclusive". That is neither a pass nor a reproduced violation: ${reason}`);
+    expect(text).not.toContain("see the evidence bundle");
+  });
+
+  it("falls back to the evidence bundle when the backend gave no reason", () => {
+    expect(unclearRegressionText({ outcome: null, status: "target_crash" })).toBe(
+      "The replay ended as \"target_crash\". That is neither a pass nor a reproduced violation; see the evidence bundle " +
+        "for the evaluator's reason.",
+    );
   });
 });

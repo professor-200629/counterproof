@@ -770,6 +770,12 @@ export interface Regression {
   job_id: string | null;
   status: RegressionStatus;
   outcome: EvaluationOutcome | null;
+  /**
+   * Why the regression ended as it did (absent on rows recorded before it existed). A regression
+   * confirms a repair only when every replay completed: when the evaluator's verdict is
+   * not_reproduced but some replays did not complete, the outcome is inconclusive and this says why.
+   */
+  outcome_reason?: string | null;
   evidence_digest: Digest | null;
   created_at: UnixSeconds;
   finished_at: UnixSeconds | null;
@@ -795,6 +801,7 @@ export interface RegressionExport {
   last_result: {
     target: string;
     outcome: EvaluationOutcome | null;
+    outcome_reason?: string | null;
     evidence_digest: Digest | null;
     spec_digest: Digest;
   };
