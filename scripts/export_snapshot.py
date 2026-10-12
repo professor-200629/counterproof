@@ -96,7 +96,11 @@ def main() -> int:
     save("/api/overview", overview)
     for ch in chosen:
         view = get(f"/api/challenges/{ch['id']}")
-        get(f"/api/challenges/{ch['id']}/settlement")
+        sett = get(f"/api/challenges/{ch['id']}/settlement")
+        # The signer's own verification bundle behind the attestation (absent on attestations
+        # signed before the signer verified submissions itself).
+        if (sett.get("attestation") or {}).get("evidence_digest"):
+            get(f"/api/evidence/{sett['attestation']['evidence_digest']}")
         get(f"/api/specs/{view['spec_digest']}")
         for reg in get(f"/api/challenges/{ch['id']}/regressions"):
             get(f"/api/regressions/{reg['id']}")
