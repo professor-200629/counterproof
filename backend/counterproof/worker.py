@@ -233,8 +233,8 @@ class Worker:
                                       "recipient": candidate["recipient"]},
                           broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
         services.save_model_proposals(conn, "regressions", rid, recorder, bundle)
-        services.record_regression(conn, rid, bundle)
-        return {"outcome": bundle["verdict"]["outcome"]}
+        r = services.record_regression(conn, rid, bundle)
+        return {"outcome": r["outcome"]}  # the regression's reading, not only the evaluator's verdict
 
 
 def main() -> None:

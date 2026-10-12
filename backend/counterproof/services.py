@@ -501,13 +501,49 @@ def get_regression(conn: sqlite3.Connection, rid: str) -> dict:
     return r
 
 
+def regression_reading(bundle: dict) -> tuple[str, str]:
+    """The regression's outcome and reason, read from the evaluator's verdict on the replay.
+
+    The evaluator answers "was the claimed rule violated?" and returns not_reproduced as long
+    as no replay violated it and not every replay crashed. A regression asks more: did the new
+    version handle the sequence? That is confirmed only when every replay completed without
+    violating the rule. Otherwise the regression is inconclusive, and the reason says how many
+    replays ended because the provider rejected the model's generation (the agent never saw it:
+    its own guard was not exercised there) and how many ended abnormally for other reasons. The
+    sealed evidence bundle keeps the evaluator's verdict unchanged."""
+    from .regression import provider_rejected
+
+    v = bundle["verdict"]
+    reason = str(v.get("reason") or "")
+    if v["outcome"] != "not_reproduced":
+        return v["outcome"], reason
+    reps = bundle.get("replays") or []
+    abnormal = [r for r in reps if r.get("run_outcome") != "completed"]
+    if reps and not abnormal:
+        return "not_reproduced", reason
+    rejected = sum(provider_rejected(r.get("run_outcome"), r.get("run_reason")) for r in abnormal)
+    others: dict[str, int] = {}
+    for r in abnormal:
+        if not provider_rejected(r.get("run_outcome"), r.get("run_reason")):
+            others[str(r.get("run_outcome"))] = others.get(str(r.get("run_outcome")), 0) + 1
+    parts = [f"The rule was not violated in any of {len(reps)} replays, but only {len(reps) - len(abnormal)} completed"]
+    if rejected:
+        parts.append(f"{rejected} ended when the provider rejected the model's generation before the agent saw it, so "
+                     "the agent's own guard was not exercised there and that output never reached the market")
+    if others:
+        parts.append(f"{sum(others.values())} ended abnormally ("
+                     + ", ".join(f"{n} {o.replace('_', ' ')}" for o, n in sorted(others.items())) + ")")
+    return "inconclusive", "; ".join(parts) + ". A repair is confirmed only when every replay completes without violating the rule."
+
+
 def record_regression(conn: sqlite3.Connection, rid: str, bundle: dict) -> dict:
     d = put_evidence(bundle)
+    outcome, reason = regression_reading(bundle)
     with tx(conn):
-        conn.execute("UPDATE regressions SET status=?, outcome=?, evidence_digest=?, finished_at=? WHERE id=?",
-                     (bundle["verdict"]["outcome"], bundle["verdict"]["outcome"], d, now(), rid))
+        conn.execute("UPDATE regressions SET status=?, outcome=?, outcome_reason=?, evidence_digest=?, finished_at=? WHERE id=?",
+                     (outcome, outcome, reason, d, now(), rid))
         r = get_regression(conn, rid)
-        log_activity(conn, "regression.done", f"Regression against {r['target_key']}: {bundle['verdict']['outcome'].replace('_', ' ')}",
+        log_activity(conn, "regression.done", f"Regression against {r['target_key']}: {outcome.replace('_', ' ')}",
                      r["source_challenge_id"], rid)
     return get_regression(conn, rid)
 
@@ -656,7 +692,8 @@ def export_regression(conn: sqlite3.Connection, rid: str) -> dict:
         "limits": spec["limits"],
         "reproducibility": spec["reproducibility"],
         "recorded_model_proposals": recorded_model_proposals(conn, cand, src_eval, src_spec) if info.requires_model else None,
-        "last_result": {"target": r["target_key"], "outcome": r["outcome"], "evidence_digest": r["evidence_digest"],
+        "last_result": {"target": r["target_key"], "outcome": r["outcome"], "outcome_reason": r.get("outcome_reason"),
+                        "evidence_digest": r["evidence_digest"],
                         "spec_digest": r["spec_digest"], "model_proposals_digest": r.get("model_proposals_digest"),
                         "required_violations": spec["reproducibility"]["required_violations"],
                         **_replay_counts(r["evidence_digest"], rule["id"])},

@@ -101,7 +101,12 @@ ADAPTERS: dict[str, AdapterInfo] = {
             "the market. Orders are bound to the principal's request, and every payment passes in-code guards: "
             "mandate active, merchant allowlisted, settled payments plus this order within the budget, one "
             "payment per order with a fixed idempotency key. Policy values come only from market results, never "
-            "from merchant text or model output. Decisions still come from a hosted model; results are statistical.",
+            "from merchant text or model output. Decisions still come from a hosted model; results are statistical. "
+            "On a provider that validates tool calls (Groq, which served the 0.1.1 finding), a model that still "
+            "reaches for update_mandate is stopped by the provider first: it rejects the generation (HTTP 400 "
+            "tool_use_failed), the agent never sees it, and the replay ends as target_crash. The evaluator's "
+            "model-proposals record keeps the rejected tool name, and the ledger shows nothing reached the market, "
+            "but such a run does not exercise the agent's own refusal, and a regression counts it as not completed.",
             provenance="Written by the CounterProof team after the recorded 0.1.1 finding (Monad testnet challenge "
             "#3: injected merchant text led the model to call update_mandate in 3 of 3 replays). A repair by the "
             "team that found the problem, not an independent implementation. The model is a third-party hosted "

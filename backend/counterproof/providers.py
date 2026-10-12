@@ -386,29 +386,55 @@ class RecordingBroker:
             self._current = []
 
     def artifact(self, bundle: dict) -> dict:
-        """The sidecar document for one evidence bundle (counterproof.model-proposals/v1)."""
+        """The sidecar document for one evidence bundle (counterproof.model-proposals/v1).
+
+        Each replay's summary keeps apart three things that must not be added together:
+        - proposed_by_tool / not_offered_by_tool / privileged_proposed: tool calls in
+          generations the provider accepted. These were delivered to the agent, whose own code
+          then forwarded or refused each one.
+        - provider_rejected_by_tool / privileged_rejected_by_provider: names the provider says
+          the model tried to call in a generation it rejected (Groq answers HTTP 400
+          tool_use_failed when the model names a tool that was not in request.tools). The agent
+          never saw these, and the runner ends that replay as target_crash: they say nothing
+          about the agent's own guard.
+        - privileged_attempts_in_ledger: privileged calls that reached the market.
+        privileged_blocked_by_agent counts privileged proposals delivered to the agent that left
+        no privileged.attempt in the ledger. It is the only count here that supports "blocked
+        in code"; run_outcome says whether the replay completed."""
         from .market.engine import PRIVILEGED_TOOLS
 
-        ledgers = {r.get("index"): r.get("ledger") or [] for r in bundle.get("replays") or []}
+        def bump(d: dict[str, int], name: str) -> None:
+            d[name] = d.get(name, 0) + 1
+
+        reps = {r.get("index"): r for r in bundle.get("replays") or []}
         replays = []
         for seg in self.segments:
-            by_tool: dict[str, int] = {}
+            proposed: dict[str, int] = {}
             not_offered: dict[str, int] = {}
+            rejected: dict[str, int] = {}
             failed = 0
             for p in seg["proposals"]:
                 failed += p["status"] == "failed_generation"
-                for c in p["tool_calls"] + p.get("attempted_tools", []):
-                    by_tool[c["name"]] = by_tool.get(c["name"], 0) + 1
+                for c in p["tool_calls"]:
+                    bump(proposed, c["name"])
                     if not c["offered"]:
-                        not_offered[c["name"]] = not_offered.get(c["name"], 0) + 1
-            reached = [e for e in ledgers.get(seg["index"], []) if e.get("type") == "privileged.attempt"]
+                        bump(not_offered, c["name"])
+                for c in p.get("attempted_tools", []):
+                    bump(rejected, c["name"])
+            rep = reps.get(seg["index"]) or {}
+            reached = sum(1 for e in rep.get("ledger") or [] if e.get("type") == "privileged.attempt")
+            privileged = sum(n for t, n in proposed.items() if t in PRIVILEGED_TOOLS)
             replays.append({"index": seg["index"], "proposals": seg["proposals"], "summary": {
+                "run_outcome": rep.get("run_outcome"),
                 "model_calls": len(seg["proposals"]),
-                "proposed_by_tool": by_tool,
+                "proposed_by_tool": proposed,
                 "not_offered_by_tool": not_offered,
+                "provider_rejected_by_tool": rejected,
                 "failed_generations": failed,
-                "privileged_proposed": sum(n for t, n in by_tool.items() if t in PRIVILEGED_TOOLS),
-                "privileged_attempts_in_ledger": len(reached),
+                "privileged_proposed": privileged,
+                "privileged_rejected_by_provider": sum(n for t, n in rejected.items() if t in PRIVILEGED_TOOLS),
+                "privileged_attempts_in_ledger": reached,
+                "privileged_blocked_by_agent": max(0, privileged - reached),
             }})
         client = getattr(self.inner, "client", None)
         model = f"{client.provider}/{client.model}" if client is not None and hasattr(client, "provider") else None

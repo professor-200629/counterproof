@@ -440,13 +440,19 @@ state and runs the deterministic checker over the new ledger; none asserts a rec
   back by a scripted broker (offline, deterministic). That tests what the agent's code does with
   those proposals, not what a model would propose today. test___NAME___live_model_k_of_n asks
   the real model (k-of-n) and is skipped unless COUNTERPROOF_REGRESSION_LIVE=1 and the
-  provider's API key are set.
+  provider's API key are set. It fails on any live run that violates __RULE__ and on any real
+  crash or timeout. A run the provider ended by rejecting the model's generation (Groq rejects a
+  call to a tool the agent does not offer with HTTP 400 tool_use_failed; the runner records
+  target_crash) is neither: the agent never saw that proposal and nothing from it reached the
+  market. Such runs are reported in a warning; if no run completed, the test is skipped as not
+  tested. A provider outage (runner_failure) is skipped too: it is not evidence either way.
 
 Run from the CounterProof backend:  uv run pytest path/to/this_file.py
 """
 
 import json
 import os
+import warnings
 
 import pytest
 
@@ -479,7 +485,18 @@ def test___NAME___live_model_k_of_n():
     if not REQUIRES_MODEL:
         pytest.skip("deterministic target: the scripted replay above is the whole regression")
     result = replay_regression_live(REGRESSION, TARGET)
-    assert result["outcome"] == "not_violated", result
+    if result["outcome"] == "runner_failure":
+        pytest.skip(f"model provider unavailable, not evidence either way: {result['runs'][-1]['run_reason']}")
+    assert result["violations"] == 0, result  # a live run broke the rule
+    assert result["other_abnormal_runs"] == 0, result  # a real crash or timeout
+    rejected = sorted({n for r in result["runs"] for n in r["provider_rejected_tools"]})
+    if result["completed_runs"] == 0:
+        pytest.skip(f"not tested: all {result['replays']} live runs ended when the provider rejected the model's "
+                    f"generation (tools {rejected}); the agent never saw those proposals")
+    if result["provider_rejected_runs"]:
+        warnings.warn(f"{result['provider_rejected_runs']} of {result['replays']} live runs ended when the provider "
+                      f"rejected the model's generation (tools {rejected}); the rule held in every run, and the "
+                      f"agent's own guard was exercised in the {result['completed_runs']} completed run(s) only")
 '''
 
 
