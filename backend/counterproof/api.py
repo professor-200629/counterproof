@@ -376,6 +376,13 @@ def get_evidence(d: str, download: bool = False) -> Response:
     return Response(body, media_type="application/json", headers=headers)
 
 
+@app.get("/api/model-proposals/{d}")
+def get_model_proposals(d: str) -> dict:
+    """Read-only: what the evaluator's model broker saw the model propose (sidecar of an
+    evidence bundle). Served only for digests recorded on an evaluation or regression."""
+    return services.model_proposals(db(), d)
+
+
 @app.get("/api/jobs/{jid}")
 def get_job(jid: str) -> dict:
     j = jobs.get(db(), jid)
@@ -416,31 +423,82 @@ def export_regression(rid: str, format: str = "json") -> Response:
                     headers={"Content-Disposition": f'attachment; filename="regression-{data["name"]}.json"'})
 
 
-def _pytest_file(data: dict) -> str:
-    return f'''"""CounterProof regression test (generated).
+_PYTEST_TEMPLATE = '''"""CounterProof regression test (generated).
 
-Replays the counterexample {data["source"]["candidate_digest"]}
-(original outcome: {data["source"]["original_outcome"]}, evidence {data["source"]["evidence_digest"]})
-and asserts: {data["expectation"]}.
+Replays the counterexample __CANDIDATE__
+(original outcome: __ORIGINAL_OUTCOME__ against __ORIGINAL__, evidence __EVIDENCE__)
+and asserts: __EXPECTATION__.
+
+Every test really executes the adapter in a fresh child process from the committed initial
+state and runs the deterministic checker over the new ledger; none asserts a recorded verdict.
+
+- test___NAME___does_not_regress: the version under test (default __TARGET__, override with
+  COUNTERPROOF_TARGET) completes the run without violating __RULE__.
+- test___NAME___original_version_still_fails: the original version (__ORIGINAL__), when it is
+  installed, still violates __RULE__ on the same replay, so the test discriminates.
+- Live-model targets: the model's recorded proposals from the original evaluation are served
+  back by a scripted broker (offline, deterministic). That tests what the agent's code does with
+  those proposals, not what a model would propose today. test___NAME___live_model_k_of_n asks
+  the real model (k-of-n) and is skipped unless COUNTERPROOF_REGRESSION_LIVE=1 and the
+  provider's API key are set.
 
 Run from the CounterProof backend:  uv run pytest path/to/this_file.py
-Set COUNTERPROOF_TARGET to the adapter key under test (default: {data["last_result"]["target"]}).
 """
 
 import json
 import os
 
-from counterproof.regression import replay_regression
+import pytest
 
-REGRESSION = json.loads(r"""{json.dumps(data)}""")
+from counterproof.regression import LIVE_ENV, replay_regression, replay_regression_live
+from counterproof.targets import registry
+
+REGRESSION = json.loads(r"""__JSON__""")
+RULE = REGRESSION["rule"]["id"]
+TARGET = os.environ.get("COUNTERPROOF_TARGET", REGRESSION["last_result"]["target"])
+ORIGINAL = (REGRESSION.get("source") or {}).get("target")
+REQUIRES_MODEL = bool((REGRESSION.get("target") or {}).get("requires_model"))
 
 
-def test_{data["rule"]["template"].replace(".", "_")}_does_not_regress():
-    target = os.environ.get("COUNTERPROOF_TARGET", "{data["last_result"]["target"]}")
-    result = replay_regression(REGRESSION, target)
-    assert result["run_outcome"] == "completed", result
-    assert REGRESSION["rule"]["id"] not in result["rules_violated"], result["violations"]
+def test___NAME___does_not_regress():
+    result = replay_regression(REGRESSION, TARGET)
+    assert result["run_outcome"] == "completed", (result["run_outcome"], result["run_reason"])
+    assert RULE not in result["rules_violated"], result["violations"]
+
+
+def test___NAME___original_version_still_fails():
+    if not ORIGINAL or ORIGINAL == TARGET or ORIGINAL not in registry.ADAPTERS:
+        pytest.skip(f"original version {ORIGINAL} is not installed or is the version under test")
+    result = replay_regression(REGRESSION, ORIGINAL)
+    assert RULE in result["rules_violated"], (result["run_outcome"], result["run_reason"], result["violations"])
+
+
+@pytest.mark.skipif(os.environ.get(LIVE_ENV) != "1",
+                    reason="live-model replay is opt-in: set COUNTERPROOF_REGRESSION_LIVE=1 and the provider's API key")
+def test___NAME___live_model_k_of_n():
+    if not REQUIRES_MODEL:
+        pytest.skip("deterministic target: the scripted replay above is the whole regression")
+    result = replay_regression_live(REGRESSION, TARGET)
+    assert result["outcome"] == "not_violated", result
 '''
+
+
+def _pytest_file(data: dict) -> str:
+    src = data.get("source") or {}
+    fields = {
+        "__CANDIDATE__": str(src.get("candidate_digest")),
+        "__ORIGINAL_OUTCOME__": str(src.get("original_outcome")),
+        "__ORIGINAL__": str(src.get("target") or "the original version"),
+        "__EVIDENCE__": str(src.get("evidence_digest")),
+        "__EXPECTATION__": str(data["expectation"]).replace('"""', "'''"),
+        "__TARGET__": str(data["last_result"]["target"]),
+        "__RULE__": str(data["rule"]["id"]),
+        "__NAME__": "".join(ch if ch.isalnum() else "_" for ch in data["rule"]["template"]),
+    }
+    out = _PYTEST_TEMPLATE
+    for k, v in fields.items():
+        out = out.replace(k, v)
+    return out.replace("__JSON__", json.dumps(data))
 
 
 def main() -> None:

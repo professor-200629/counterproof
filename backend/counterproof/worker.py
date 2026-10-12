@@ -201,13 +201,15 @@ class Worker:
         e = services.get_evaluation(conn, eid)
         if e["candidate_id"]:
             conn.execute("UPDATE candidates SET status='replaying' WHERE id=?", (e["candidate_id"],))
-        from .providers import broker_for_spec
+        from .providers import broker_for_spec, recording_broker
 
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+        recorder = recording_broker(broker)  # what the model proposed, per replay (sidecar, not evidence)
         bundle = evaluate(spec=spec, spec_dgst=d, candidate=candidate, submission=submission,
-                          broker=broker, cancel=cancel)
+                          broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
+        services.save_model_proposals(conn, "evaluations", eid, recorder, bundle)
         e = services.record_evaluation(conn, eid, bundle)
         if bundle["verdict"]["outcome"] == "verified_violation" and bundle["verdict"]["reward_eligible"]:
             from .chain import request_attestation_safely
@@ -220,15 +222,17 @@ class Worker:
         r = services.get_regression(conn, rid)
         spec = services.get_spec(conn, r["spec_digest"])
         conn.execute("UPDATE regressions SET status='replaying' WHERE id=?", (rid,))
-        from .providers import broker_for_spec
+        from .providers import broker_for_spec, recording_broker
 
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+        recorder = recording_broker(broker)
         bundle = evaluate(spec=spec, spec_dgst=r["spec_digest"], candidate=candidate,
                           submission={"submission_id": f"regression:{rid}", "challenger": candidate["challenger"],
                                       "recipient": candidate["recipient"]},
-                          broker=broker, cancel=cancel)
+                          broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
+        services.save_model_proposals(conn, "regressions", rid, recorder, bundle)
         services.record_regression(conn, rid, bundle)
         return {"outcome": bundle["verdict"]["outcome"]}
 
