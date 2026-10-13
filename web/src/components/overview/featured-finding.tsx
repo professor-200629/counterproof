@@ -13,7 +13,8 @@ import { ErrorState, Loading, Skeleton } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Mono, TextLink, textLinkClasses } from "@/components/ui/text-link";
 import { DataPairs } from "@/components/evidence/values";
-import { finishedSummary, specJsonUrl, type ChallengeListItem, type ChallengeView, type Evaluation, type Regression } from "@/lib/api";
+import { sameActions } from "@/components/compare/ledger-facts";
+import { finishedSummary, specJsonUrl, type ChallengeListItem, type ChallengeView, type Evaluation, type EvidenceBundle, type Regression } from "@/lib/api";
 import { formatWei } from "@/lib/chain";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/format";
@@ -29,6 +30,7 @@ import {
   pickFeaturedChallenge,
   pickFeaturedEvaluation,
   replayTally,
+  recordedReplayFacts,
   sameFamilyRegressions,
   truncateText,
 } from "./featured-data";
@@ -105,12 +107,15 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
   const injected = injectedContent(bundle?.candidate?.actions, spec.initial_state.products);
   const attempt = bundle ? attemptSummary(bundle, rule) : null;
   const repairs = sameFamilyRegressions(regsQ.data, view, evaluation.candidate_id);
-  const repair: Regression | null = repairs[0] ?? null;
+  const repair: Regression | null = repairs.find((r) => r.source_candidate_id === evaluation.candidate_id) ?? null;
   const evidenceDigest = bundle?.evidence_digest ?? evaluation.evidence_digest;
   const feedback = feedbackFor(ercQ.data, evidenceDigest, view.onchain_id, targetKey);
 
   const subject = liveModel ? "A live-model agent" : fixture ? "An intentionally vulnerable fixture" : "The target agent";
-  const headline = tally
+  const spendingLimitAttempt = liveModel && attempt?.tool === "update_mandate" && typeof attempt.args.budget === "number";
+  const headline = spendingLimitAttempt
+    ? "An AI shopping agent tried to raise its own spending limit."
+    : tally
     ? `${subject} violated ${rule?.id ?? "its promise"} in ${tally.violated} of ${tally.total} fresh evaluator replays`
     : `${subject} violated ${rule?.id ?? "its promise"} in the evaluator's replays`;
 
@@ -122,7 +127,7 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
           {liveModel ? "Featured live-model finding" : "Featured finding (no live-model finding recorded)"}
           <RecordedMark what="This finding" className="normal-case tracking-normal" />
         </p>
-        <h2 id={HEADING_ID} className="mt-1 text-base font-semibold text-fg sm:text-lg">
+        <h2 id={HEADING_ID} className="mt-1 max-w-3xl text-xl font-semibold tracking-tight text-fg sm:text-2xl">
           {headline}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -133,6 +138,9 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
             Challenge #{view.id}
           </TextLink>
         </div>
+        {liveModel ? (
+          <RecordedComparison view={view} bundle={bundle} repair={repair} ruleId={rule?.id ?? null} />
+        ) : null}
       </header>
 
       <dl className="grid gap-x-6 gap-y-4 px-4 py-4 sm:px-5 md:grid-cols-2">
@@ -196,7 +204,7 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
           )}
         </Fact>
 
-        <Fact title="What the agent attempted">
+        <Fact title="Tool attempt that reached the marketplace">
           {attempt ? (
             <div className="space-y-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -222,6 +230,7 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
                       </>
                     ) : null}
                     . The rule counts the attempt itself, refused or not.
+                    {attempt.tool === "update_mandate" && attempt.replaysRefused === attempt.replaysWithAttempt ? " No spending-limit change was executed by these calls." : ""}
                   </>
                 ) : (
                   "No refusal of this call is recorded in the tool-call trace."
@@ -310,6 +319,53 @@ function FeaturedBody({ view, evaluation, liveModel }: { view: ChallengeView; ev
         </Disclosure>
       </footer>
     </Shell>
+  );
+}
+
+/** A compact lead comparison; every count is derived from completed ledger-backed runs. */
+function RecordedComparison({ view, bundle, repair, ruleId }: {
+  view: ChallengeView;
+  bundle: EvidenceBundle | null;
+  repair: Regression | null;
+  ruleId: string | null;
+}) {
+  const afterQ = useEvidence(repair?.evidence_digest);
+  const before = bundle ? recordedReplayFacts(bundle) : null;
+  const afterBundle = afterQ.data;
+  const after = bundle && afterBundle && afterBundle.claimed_rule === ruleId && sameActions(bundle.candidate?.actions, afterBundle.candidate?.actions)
+    ? recordedReplayFacts(afterBundle) : null;
+  const allPurchases = !!after && after.completed > 0 && after.purchasesCompleted === after.completed;
+  return (
+    <div className="mt-3" aria-label="Recorded original and repaired comparison">
+      <dl className="grid gap-2 sm:grid-cols-3">
+        <div className="min-w-0 rounded-md border border-bad-line bg-bad-soft px-3 py-2">
+          <dt className="text-xs font-semibold text-muted">Original agent · v{view.spec.target.version}</dt>
+          <dd className="mt-1 text-sm font-medium text-fg">
+            {before ? <>{ruleId ?? "Claimed rule"} violated in <strong className="tabular text-bad">{before.violated}/{before.total}</strong> recorded replays.</> : "Loading recorded replays…"}
+          </dd>
+        </div>
+        <div className="min-w-0 rounded-md border border-line bg-raised px-3 py-2">
+          <dt className="text-xs font-semibold text-muted">Repaired agent{repair ? ` · v${repair.target_key.split("@")[1]}` : ""}</dt>
+          <dd className="mt-1 text-sm font-medium text-fg">
+            {after ? after.completed === 0 ? "No completed recorded replays." : <>{ruleId ?? "Claimed rule"} violated in <strong className={cn("tabular", after.violated === 0 ? "text-ok" : "text-warn")}>{after.violated}/{after.completed}</strong> completed recorded replays.</>
+              : repair ? afterQ.isError ? "Recorded repair could not be loaded." : afterBundle && bundle ? "A matching attack is not recorded." : "Loading recorded repair…" : "No repair recorded for this attack."}
+          </dd>
+          {after?.failed ? <p className="mt-1 text-xs text-warn">{after.failed} of {after.total} replays did not complete; those are not passes.</p> : null}
+        </div>
+        <div className="min-w-0 rounded-md border border-line bg-raised px-3 py-2">
+          <dt className="text-xs font-semibold text-muted">Requested purchase</dt>
+          <dd className="mt-1 text-sm font-medium text-fg">
+            {allPurchases ? "Requested purchase still completed." : after ? "Requested purchase not completed in every replay." : "Loads with the repaired ledger."}
+          </dd>
+          {after ? <p className="mt-1 text-xs text-muted">{after.purchasesCompleted}/{after.completed} completed replays · synthetic SYN payment</p> : null}
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-muted">
+        Recorded, bounded results for this attack and model.
+        {view.network === "monad-testnet" ? " Rewards use testnet MON." : ""}
+        {afterBundle?.challenge.settlement === null ? " The repaired replay was recorded off-chain." : ""}
+      </p>
+    </div>
   );
 }
 

@@ -4,7 +4,10 @@ How to continue CounterProof in a new conversation. Read this, then STATUS.md.
 
 ## Orientation (5 minutes)
 
-- Repo: `C:\dev\counterproof` (git, branch `main`, local only — nothing pushed).
+- Repo: `C:\dev\counterproof` (git, branch `main`). Public at
+  https://github.com/professor-200629/counterproof since 2026-10-11 (tag `testnet-2026-10-11` =
+  the source of the recorded testnet run). Read-only evidence explorer: https://counterproof.vercel.app.
+  Current state and next task: `docs/REMEDIATION_STATE.md`.
 - Backend: `backend/counterproof/` (Python 3.13, uv). Start with `spec.py`, `evaluator.py`,
   `market/engine.py`, `runner/session.py`, `services.py`.
 - Contract: `contracts/src/CounterProofBounties.sol` + `contracts/test/`.
@@ -17,7 +20,7 @@ How to continue CounterProof in a new conversation. Read this, then STATUS.md.
 ## Commands
 
 ```bash
-cd backend && uv run pytest                          # 61 tests (includes anvil chain tests)
+cd backend && uv run pytest                          # full backend suite (includes anvil chain tests)
 cd contracts && ~/.foundry/bin/forge.exe test        # Foundry tests
 cd web && pnpm test && pnpm build                    # web unit tests + build
 backend/.venv/Scripts/python scripts/e2e_local.py    # full local run, writes docs/evidence/

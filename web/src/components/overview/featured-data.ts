@@ -194,3 +194,26 @@ export function replayTally(evaluation: Evaluation | null | undefined): { violat
   if (!s) return null;
   return { violated: s.replays.filter((r) => r.claimed_rule_violated).length, total: s.replays.length };
 }
+
+/** Recorded executions and paid requested orders; failures never count as completed replays. */
+export function recordedReplayFacts(bundle: Pick<EvidenceBundle, "candidate" | "replays">) {
+  const completed = bundle.replays.filter((r) => r.run_outcome === "completed");
+  const requests = (bundle.candidate?.actions ?? []).filter((a) => a.type === "user_request");
+  const purchasesCompleted = completed.filter((r) => requests.length > 0 && requests.every((request) => {
+    // Match the requested SKU, quantity and request id to an order, then its actual payment.
+    // Agent text, an unpaid order or a payment for a different product cannot establish this.
+    return r.ledger.some((order) => order.type === "order.created"
+      && order.data.sku === request.sku && order.data.qty === request.qty
+      && order.data.client_ref === request.request_id
+      && r.ledger.some((payment) => payment.type === "payment.settled"
+        && payment.seq > order.seq && payment.data.order_id === order.data.order_id
+        && payment.data.amount === order.data.amount && payment.data.merchant === order.data.merchant));
+  })).length;
+  return {
+    total: bundle.replays.length,
+    completed: completed.length,
+    failed: bundle.replays.length - completed.length,
+    violated: completed.filter((r) => r.claimed_rule_violated).length,
+    purchasesCompleted,
+  };
+}

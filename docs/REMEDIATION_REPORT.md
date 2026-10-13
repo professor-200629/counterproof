@@ -1,10 +1,14 @@
 # Remediation report (2026-10-12 / 2026-10-13)
 
 The review findings below came from an earlier version. Each was checked against the code
-before anything was changed. All work is on branch `remediation/judge-review`, which was
-started from `main` @ `51c0832` (the state published on 2026-10-11). That source is preserved
-as the local tag `testnet-2026-10-11`. Nothing has been pushed or deployed yet; see "Owner
-actions" at the end. The working log is in [REMEDIATION_STATE.md](REMEDIATION_STATE.md).
+before anything was changed. The original remediation branch `remediation/judge-review`
+started from `main` @ `51c0832` (the state published on 2026-10-11). It was merged and
+published on 2026-10-13; the publication log is commit `7ea1a96`, which is the reviewed
+starting point of the current checkout on `main`. Historical exact source is preserved
+in the published tag `testnet-2026-10-11`. GitHub and the hosted snapshot already contain
+that earlier release. Additional submission fixes prepared in this session are local,
+pending a new authorized release. The working log is
+[REMEDIATION_STATE.md](REMEDIATION_STATE.md).
 
 ## Evidence classes used in this report
 
@@ -210,9 +214,10 @@ actions" at the end. The working log is in [REMEDIATION_STATE.md](REMEDIATION_ST
   - The source link defaults to the public repository.
   - Pages are measured at 375 px. A compare-page overflow to 789 px came from an absolutely
     positioned screen-reader label escaping its scroll box, and is fixed.
-- **Hosted site.** Labelled as a read-only evidence explorer. The new snapshot (challenges 1-3
-  unchanged, plus the repaired replay and an off-chain ordinary-purchase check) is committed
-  but **not deployed yet**.
+- **Hosted site.** Labelled as a read-only evidence explorer. At the original pre-publication
+  checkpoint on 2026-10-13 the new snapshot (challenges 1-3 unchanged, plus the repaired replay
+  and an off-chain ordinary-purchase check) was committed but not yet deployed. Publication
+  later that day is recorded below; the hosted site now serves that snapshot.
 
 ### 7. Found during verification: migration race, fixed now
 
@@ -221,7 +226,7 @@ processes could apply the same `ALTER TABLE` ("duplicate column name") and the w
 `db.migrate` now re-checks under the write lock. The new test fails 3/3 without the fix and
 passes 3/3 with it.
 
-## Test results (final, on the merged branch)
+## Test results (original merged remediation release, 2026-10-13)
 
 | Check | Result | Environment |
 |---|---|---|
@@ -246,17 +251,30 @@ Baseline before the work (on `51c0832`): backend 88 passed / 4 skipped, contract
 - the live variant of the exported regression test was not re-run (its live result is the
   recorded repaired replay).
 
-## Fresh demo / reproduction procedure
+## Current clean-clone demonstration / reproduction procedure
 
-See [REPRODUCE.md](REPRODUCE.md). In short:
+See [REPRODUCE.md](REPRODUCE.md) for tested Windows and untested Linux/macOS commands.
+From the repository root after `uv sync` in `backend`:
 
-1. `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`.
-2. `cd backend && uv run pytest`, then the exported regression test.
-3. `scripts/dev.py local`, sign in as judge (passcode in `data/judge.passcode`) and run the
-   strategies.
-4. With a Groq key: `scripts/live_repair_replay.py` on the owner's machine, or
-   `COUNTERPROOF_FORK_REHEARSAL=1 COUNTERPROOF_TESTNET_RPC=http://127.0.0.1:8546 scripts/e2e_testnet_llm.py --recorded`
-   against `anvil --fork-url https://testnet-rpc.monad.xyz --network monad --port 8546`.
+1. `backend/.venv/Scripts/python scripts/live_repair_replay.py --mode offline` validates
+   public digests, seals, ledgers, rules and the recorded comparison. This checks records,
+   not proof that execution happened.
+2. `backend/.venv/Scripts/python scripts/live_repair_replay.py --mode scripted` actually
+   executes both adapters with recorded model proposals and discriminates original R5
+   failure from repaired completion with a working purchase.
+3. With the reader's own provider key, add `--mode live --allow-live` for bounded fresh
+   current-source execution and accurate new artifact bindings, completions and failures.
+   No private SQLite/data directory, wallet, signing key or `.env` is required; no fixture
+   fallback is allowed. Public downloads use `--url https://counterproof.vercel.app`
+   without operator credentials or authorization headers.
+4. `backend/.venv/Scripts/python scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`
+   checks the hosted historical records against Monad testnet (read-only).
+
+For the full local stack, `scripts/dev.py local` runs anvil (chain 31337, not Monad).
+Judges may search/replay within their session permissions. Funded candidate submission
+through the gas-paying challenger bot is operator-only, so the guide does not instruct
+a judge to do that. Historical exact-source execution remains pinned to
+`testnet-2026-10-11`; this session did not rewrite funded specs or historical evidence.
 
 ## Deployment and external-validation status
 
@@ -273,15 +291,46 @@ See [REPRODUCE.md](REPRODUCE.md). In short:
 
 ## Owner actions
 
-1. **Confirm the submission cut-off and video limits in the portal.** The public pages say only
-   "13 Oct".
-2. **Publish (your decision).** These are the exact commands once approved:
-   ```bash
-   git push origin remediation/judge-review testnet-2026-10-11
-   git checkout main && git merge --no-ff remediation/judge-review && git push origin main
-   cd web && npx vercel deploy --prod --yes --build-env NEXT_PUBLIC_SNAPSHOT=1 --build-env NEXT_PUBLIC_SNAPSHOT_SOURCE_URL=https://github.com/professor-200629/counterproof
-   ```
-   The deploy uploads the committed `web/public/snapshot` (re-exported 2026-10-13). After it,
-   run `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`.
-3. **Record the demo and pitch** from [DEMO_SCRIPT.md](DEMO_SCRIPT.md) and [PITCH.md](PITCH.md),
-   then submit with [SUBMISSION.md](SUBMISSION.md).
+1. **Publish the newly reviewed local fixes** when separately authorized. The earlier
+   branch/tag push, main merge and Vercel publication already happened; those are not
+   pending actions. Include the owner-approved MIT LICENSE and the README AI/attribution
+   disclosures in the release, then recheck hosted evidence and downloads.
+2. **Create the portal project and inspect the remaining final-form fields.** Current
+   signed-in rules confirm 13 October 11:59 PM US Eastern / 14 October 9:29 AM IST,
+   a single primary track, public code with OSI licence, a runnable prototype and a
+   public technical demo at most 3 minutes. Name/one-line limits are 120/200.
+   The pitch's previously recorded 2-minute limit and logo upload details need checking
+   after project creation. No form was submitted or terms accepted.
+3. **Record and check both videos** from [DEMO_SCRIPT.md](DEMO_SCRIPT.md) and
+   [PITCH.md](PITCH.md); paste real accessible links into
+   [SUBMISSION_FINAL.md](SUBMISSION_FINAL.md), review declarations, then submit.
+
+## Additional submission fixes (current local session, 2026-10-13)
+
+- The reproduction script reconstructs validated public artifacts in an isolated temporary
+  directory. Offline and scripted modes work without a data directory; live mode is explicit
+  and uses only the reader's own provider credential. Scripted replay preserves the actions,
+  rules, initial state, recorded config/limits and 2-of-3 policy, while binding fresh runs to
+  actual current artifact digests. Original: R5 3/3; repaired: R5 0/3 completed, purchase 3/3.
+- A genuinely clean public clone with its own `uv sync` environment completed offline mode
+  (0.1 s measured) and scripted mode (1.5 s measured), creating no `data` directory. New
+  reproduction tests: **16 passed**. Before their addition the existing backend suite was
+  re-run: **198 passed, 4 skipped**; contracts **58 passed**. The historical exported pytest
+  was executed: **2 passed, 1 skipped**, with the live variant explicitly opt-in.
+- Frontend copy leads with the plain-language incident and compact recorded original/repair
+  comparison; model proposals, forwarded marketplace calls and executed effects remain distinct.
+  Web **173 passed**, typecheck/lint clean, production snapshot build clean; desktop and
+  375 × 812 checks found no overflow. These UI changes are local until published.
+- Hosted records plus Monad testnet read-back passed. All **52** published snapshot files
+  returned HTTP 200 and matched the checkout byte-for-byte; overview, challenge #3, original
+  evaluation, compare and settlement pages returned HTTP 200. This verifies the existing
+  hosted release, not publication of the new edits.
+- Contradictory deployment statements were corrected with historical timestamps preserved.
+  Paste-ready submission fields include a measured **187-character** one-line description,
+  accurate evidence links, source/licensing disclosure and honest go-to-market plan. Existing
+  logo branding was retained and rendered to a checked 512 × 512 PNG.
+- Actual local recording actions were rehearsed: forged-worker-evidence signer checks
+  **4 passed** (8.95 s elapsed); exported regression **2 passed, 1 skipped** (3.06 s elapsed).
+  The scripts show elapsed time and disclose recorded multi-minute model durations/cuts.
+- No fresh live provider evaluation, new Monad testnet transaction or final video was produced
+  for these fixes. External-agent evaluation and independent human reproduction remain pending.

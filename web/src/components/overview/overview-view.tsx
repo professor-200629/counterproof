@@ -33,7 +33,7 @@ export function OverviewView() {
   const header = (
     <PageHeader
       title="Overview"
-      description="Promises about AI purchasing agents, the counterexamples found against them, and what the declared trusted evaluator verified on replay."
+      description={SNAPSHOT_MODE ? undefined : "Promises about AI purchasing agents, the counterexamples found against them, and what the declared trusted evaluator verified on replay."}
       actions={
         SNAPSHOT_MODE ? (
           <ButtonLink href="/challenges/new" icon={<FilePlus2 />}>

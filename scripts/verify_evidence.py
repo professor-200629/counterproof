@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -43,11 +44,16 @@ class Source:
         if base.startswith("https://"):
             import httpx
 
-            self.http = httpx.Client(timeout=30)
+            parsed = urlsplit(base)
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("public snapshot URL must not contain credentials, query parameters or a fragment")
+            self.http = httpx.Client(timeout=30, trust_env=False, follow_redirects=False, auth=None,
+                                     headers={"Accept": "application/json"})
 
     def get(self, rel: str):
         rel = rel.replace(":", "_")
         if self.http:
+            self.http.cookies.clear()
             r = self.http.get(f"{self.base.rstrip('/')}/snapshot/{rel}")
             r.raise_for_status()
             return r.json()

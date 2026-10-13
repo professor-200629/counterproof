@@ -1,8 +1,9 @@
 # Status
 
-_Last updated: 2026-10-13 (remediation branch `remediation/judge-review`). Submission cut-off:
-the portal said 2026-10-14 03:59 UTC on 2026-10-06; on 2026-10-13 the public pages only say
-"13 Oct" and the portal needs sign-in, so confirm it there._
+_Last updated: 2026-10-13. Current checkout: `main`, starting at published/reviewed
+`7ea1a96`. The signed-in portal dashboard and rules v3.0 confirm the cut-off:
+13 October 2026, 11:59 PM US Eastern = 14 October, 03:59 UTC / 9:29 AM IST.
+The portal remains authoritative for changes._
 
 ## Current stage
 
@@ -14,6 +15,37 @@ model, no planted defects) that was settled and recorded in the official ERC-800
 ReputationRegistry. Source:
 https://github.com/professor-200629/counterproof. Read-only console with the recorded testnet
 run: https://counterproof.vercel.app.
+
+The earlier remediation release was published and recorded in `7ea1a96`. Submission
+fixes prepared in this session are local until a new release is authorized and published.
+[docs/SUBMISSION_FINAL.md](docs/SUBMISSION_FINAL.md) supplies paste-ready fields, a
+187-character one-line description (current portal limit 200), precise links, build,
+licensing and AI disclosures, and remaining owner actions. The owner approved the MIT
+LICENSE; it is part of the local release package. Both videos are still pending.
+
+## Submission fixes and verification (current local work, 2026-10-13)
+
+- Clean-clone `scripts/live_repair_replay.py --mode offline|scripted|live` reconstructs
+  public artifacts in an isolated temporary directory. Offline validates records;
+  scripted really executes both adapters, giving original R5 3/3 and repaired R5 0/3
+  completed with 3/3 requested payments. Live requires `--allow-live` plus the reader's
+  own provider key and has no fixture fallback. No private data/wallet is required.
+- New public-artifact tests: **16 passed**; focused public/regression/secrets/isolation
+  checks: **37 passed**. Historical generated regression: **2 passed, 1 skipped**.
+- Existing backend suite re-run: **198 passed, 4 skipped** (before new tests); contracts:
+  **58 passed**. Web: **173 passed**; typecheck/lint and snapshot production build clean.
+- Hosted evidence + Monad testnet read-back: all checks passed. **52 snapshot files**
+  downloaded with HTTP 200 and exact byte matches; overview, challenge #3, original
+  evaluation, comparison and settlement pages returned HTTP 200.
+- First screen now states the plain-language incident and compact 3/3 versus 0/3
+  completed comparison; desktop and 375 × 812 layout checks passed without overflow.
+- Recording commands were executed locally: signer forged-evidence checks **4 passed**
+  (8.95 s measured); exported regression **2 passed, 1 skipped** (3.06 s measured).
+  These are checks, not completed videos. No fresh live-model run or new transaction
+  was made for these submission fixes.
+- Current signed-in portal rules, deadline, single track, public code/OSI LICENSE,
+  3-minute technical demo and 120/200-character Overview limits verified read-only.
+  Final Submission fields, pitch and logo details require owner project creation.
 
 ## Remediation (2026-10-12/13): what changed and how it was checked
 
@@ -87,7 +119,7 @@ own keys are plain EOAs and register fine (checked with `eth_call` on the live t
 | Full multi-process local run incl. relayed settle, withdraw, patch, retest, export, refund | `docs/evidence/local-e2e-20261006-174302.json` (runner 1.0.0; deterministic path unchanged since) |
 | Monad gas-limit billing reproduced locally | same report |
 
-Tests on 2026-10-11 (latest run): backend **88 passed, 4 skipped** (the 4 fork tests; they
+Historical tests on 2026-10-11: backend **88 passed, 4 skipped** (the 4 fork tests; they
 pass with `COUNTERPROOF_FORK_TESTS=1`); contracts **58 passed** (2026-10-06, contract unchanged
 since); web unit tests **107 passed**.
 
@@ -96,8 +128,10 @@ since); web unit tests **107 passed**.
 https://counterproof.vercel.app (Vercel project `counterproof`, first deployed 2026-10-07 with the
 owner's approval; since 2026-10-11 it shows the recorded **Monad testnet** run: challenges 1-3 of 3,
 contract `0xe377…b5e4`). It runs nothing live; credits are read live from the public testnet RPC. Verified: all routes and assets return 200 from Vercel; the identical build
-rendered fully at localhost with no backend running. The in-app browser blocks Vercel's script
-assets, so the hosted page itself was not watched rendering - open it in a normal browser to confirm.
+rendered fully at localhost with no backend running. At the earlier 2026-10-13 publication
+check, the in-app browser blocked Vercel's script assets, so the hosted page itself was not
+watched rendering then. Current-session checks confirmed the hosted links/downloads;
+the updated local build was checked on desktop and at 375 px.
 Redeploy: `scripts/export_snapshot.py --challenges ...` then
 `cd web && npx vercel deploy --prod --yes --build-env NEXT_PUBLIC_SNAPSHOT=1 --build-env NEXT_PUBLIC_SNAPSHOT_SOURCE_URL=https://github.com/professor-200629/counterproof`.
 Source: https://github.com/professor-200629/counterproof (public since 2026-10-11).
@@ -161,9 +195,10 @@ model's daily quota ran out before they could be replayed.
 
 ## Next tasks
 
-1. Owner: confirm the submission cut-off and video limits in the portal; record the demo and pitch
-   (docs/DEMO_SCRIPT.md, docs/PITCH.md); submit (docs/SUBMISSION.md).
-2. Owner decision: publish the remediation branch (push / merge to main) and redeploy the hosted
-   evidence explorer (commands in docs/REMEDIATION_REPORT.md).
+1. Owner: create the project and inspect remaining submission fields, pitch and logo limits;
+   the current deadline and 3-minute technical demo are verified. Record and check both
+   videos (docs/DEMO_SCRIPT.md, docs/PITCH.md); submit using docs/SUBMISSION_FINAL.md.
+2. Owner decision: publish reviewed local submission fixes and the approved LICENSE;
+   the prior remediation branch and hosted snapshot are already published.
 3. Optional: a fresh testnet challenge against `llm-purchasing-agent@0.2.0` (needs testnet MON and
    explicit approval).

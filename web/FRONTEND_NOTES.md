@@ -437,6 +437,15 @@ collapsed disclosure. Counts: "Awaiting settlement" (backend `funded`, status fu
 funded" and the live-model / planted-fixture split of verified violations are derived from
 `/api/challenges` (no backend change).
 
+The spending-limit finding now leads with plain language and a compact original/repaired/purchase
+comparison before the detailed facts. The repaired comparison must match the source candidate,
+action sequence and claimed rule. Completed replay counts exclude failures; failures are displayed
+explicitly, and zero completed replays never become a passing result. The purchase claim requires a
+ledger order matching the requested SKU, quantity and request id, followed by a settled payment for
+that order (not an agent statement). Model proposals remain separate from marketplace attempts and
+effects: the recorded 0.2.0 model proposed no privileged tool, so dispatcher refusal is demonstrated
+by scripted regressions, not those live runs. No snapshot artifacts were modified for this UI change.
+
 Shared helpers outside components: `lib/format.ts` also has `plural(n, one, many?)`, `formatBytes`,
 `sameHex(a, b) -> boolean | null`; `lib/json.ts` has `asNumber` / `asString` / `asStringList`;
 `lib/chain.ts` has `digestMatchesBytes32(bytes32, "sha256:..") -> boolean | null`.

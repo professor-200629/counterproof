@@ -52,6 +52,9 @@ export function ModelProposalsSummary({ digest }: { digest: string | null | unde
       {proposalSentences(q.data).map((s) => (
         <p key={s}>{s}</p>
       ))}
+      {q.data.target === "llm-purchasing-agent@0.2.0" && proposalTotals(q.data).proposed === 0 ? (
+        <p className="text-xs text-muted">The dispatcher refusal is exercised by the repository&apos;s scripted regression tests; these live-model replays did not exercise it.</p>
+      ) : null}
       <p className="text-xs text-muted">
         Recorded alongside, not inside, the sealed evidence bundle ({q.data.model ?? "model not recorded"}). It describes these
         runs only; it is not a guarantee about other inputs or dates.

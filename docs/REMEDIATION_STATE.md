@@ -2,17 +2,34 @@
 
 Continue from this file and the actual code. Update after every milestone.
 
-- **Branch:** `remediation/judge-review` (from `main` @ `51c0832`, the state published at
-  https://counterproof.vercel.app and https://github.com/professor-200629/counterproof).
+- **Current checkout:** `C:\dev\counterproof`, branch `main`, baseline
+  `7ea1a96883a773b71e66e4852c64e52b4dfe71ed`. Clean when this submission-fix session started;
+  no owner edits were overwritten. New submission fixes are local and uncommitted.
+- **Published baseline:** GitHub main matches `7ea1a96`; the preserved historical tag is
+  published. https://counterproof.vercel.app serves the 2026-10-13 read-only Monad Testnet
+  evidence snapshot. The new local release is not yet published.
 - **Started:** 2026-10-12 21:39 UTC.
-- **Deadline (re-checked 2026-10-12 21:45 UTC):** the public pages (monad.xyz/metropolis,
-  hackathon.monad.xyz) now show only "Submission deadline: 13 Oct", with no time or timezone, and
-  do not list video lengths; the portal is behind sign-in. The repository's earlier note
-  (2026-10-14 03:59 UTC, demo <= 3 min, pitch <= 2 min) came from the portal on 2026-10-06 and
-  could not be re-verified. **Owner: confirm the exact cut-off in the portal and submit early.**
+- **Deadline (signed-in portal re-checked 2026-10-13):** dashboard and project overview show
+  **14 October 2026, 09:29 GMT+5:30 (IST)**. The rules modal, version 3.0 updated 3 September,
+  says 13 October 2026, 11:59 PM ET. These agree. Technical demo <= 3 minutes is verified in
+  current rules. Pitch <= 2 minutes remains the previously recorded limit, because the
+  submission tab is unavailable until the owner creates a project. Project name <= 120 and
+  one-line description <= 200 characters are verified. No portal fields or legal terms changed.
 - **Working tree at start:** clean (no uncommitted owner work to preserve).
 
-## Milestones
+## Submission fixes (2026-10-13, current session)
+
+| Task | Current state |
+|---|---|
+| Clean-clone public reproduction | Complete locally: offline and scripted modes passed from a real public clone with its own locked dependencies and no data directory. Explicit live mode, missing-key exit and provider-error behavior checked; 16 new tests pass. |
+| Documentation and first screen | Updated and verified locally, including production build, desktop and narrow mobile review. Recorded evidence and funded specs remain unchanged. |
+| Submission package and recordings | Paste-ready package, updated timed scripts and existing-brand PNG prepared; videos still pending. |
+| Current portal requirements | Signed-in rules and setup limits verified; submission fields and logo constraints inaccessible before project creation. Working-product requirement needs actual operation demo plus runnable code and Monad deployment. Snapshot alone is not claimed to satisfy it. |
+| Open-source license | Owner explicitly approved MIT and affirmed authority on 2026-10-13; root LICENSE added locally. Dependency licenses retained. |
+| Publication | Prior baseline publication confirmed. New release requires owner authorization; no push, deploy or new testnet transaction in this session. |
+| External agent / independent human reproduction | Still pending; no external evaluation or outreach performed. |
+
+## Earlier remediation milestones (dated 2026-10-12/13)
 
 | # | Task | State |
 |---|---|---|
@@ -24,7 +41,7 @@ Continue from this file and the actual code. Update after every milestone.
 | 6 | External open-source agent + reproduction kit | external agent BLOCKED (no container engine; plan + pinned candidates in docs/EXTERNAL_AGENT_PLAN.md); kit done (docs/REPRODUCE.md, scripts/verify_evidence.py); human reproduction pending |
 | 7 | Judge experience (first screen, comparisons, metrics) | done: merged (unit D) + model-proposal display; 375 px checked in browser (compare overflow fixed) |
 | 8 | Docs, demo, pitch, submission | done (README, STATUS, THREAT_MODEL, ARCHITECTURE, SUBMISSION, DEMO_SCRIPT, PITCH, REPRODUCE) |
-| 9 | Verification, REMEDIATION_REPORT.md | done (docs/REMEDIATION_REPORT.md); publishing awaits the owner |
+| 9 | Verification, REMEDIATION_REPORT.md | done; published 2026-10-13 ~10:30 UTC with owner approval |
 
 ## Verification log
 
@@ -80,7 +97,7 @@ Continue from this file and the actual code. Update after every milestone.
   under the container isolation the project requires for non-first-party code. Integration is
   blocked; candidates + kit being prepared.
 
-## Final state (2026-10-13 ~10:20 UTC)
+## Historical pre-publication state (2026-10-13 ~10:20 UTC)
 
 - All units merged into `remediation/judge-review` (local only). Final checks on the merged code:
   backend 198 passed / 4 skipped; ERC-8004 fork tests 12 passed; forge 58 passed; web vitest 172
@@ -92,9 +109,35 @@ Continue from this file and the actual code. Update after every milestone.
 - Found and fixed during verification: migration race when API and workers start together.
 - Report: docs/REMEDIATION_REPORT.md.
 
+## Current verification (submission-fix session, Windows 11)
+
+- Existing backend suite: **198 passed, 4 skipped** (ERC-8004 fork opt-in), 113.97 seconds.
+- Contracts: **58 passed**, including invariants, no contract changes.
+- Existing exported regression: **2 passed, 1 skipped** (fresh live provider opt-in).
+- New public reproduction tests: **16 passed**, including tampered proposals/resealed checker flags,
+  credential URLs, no public-request authorization/cookies/proxy trust, ignored `.env`, clean copy,
+  target-child secrets/scratch, unrelated paid products and real-broker HTTP 401 without fallback.
+- Fresh public Git clone with its own `uv sync --locked` virtual environment, no `data/`: offline
+  pass (0.1 s); scripted pass (1.5 s) with original R5 **3/3**, repaired
+  **0/3**, both **3/3 completed**, repaired payment **3/3**. Fresh reports bind current artifacts.
+- Live mode with provider keys removed: exits **1**, explicit missing GROQ_API_KEY, no fallback.
+- Public download reproduction: offline pass against https://counterproof.vercel.app, no credentials.
+- `verify_evidence.py --url https://counterproof.vercel.app --chain`: **all checks passed**, including
+  historical settlements, attested evidence digests and ERC-8004 feedback for agents 2190/2192.
+- Web: **173 passed**, TypeScript and ESLint clean; production snapshot build passed.
+  Desktop and **375 x 812** browser screenshots reviewed: legible comparison, no overlap or
+  horizontal overflow. Existing date, read-only and testnet labels retained.
+- All **52 hosted snapshot files**: HTTP 200 and exact byte matches to the checkout; **5 hosted
+  evidence pages**: HTTP 200. Production preview also served all 52 downloads correctly.
+- Final diff audit: no historical snapshot/evidence/deployment artifacts, funded specs, backend
+  digest-bound source or contracts modified; whitespace check clean. No actual fresh provider run
+  in this session; live credential/failure paths tested. Linux/macOS remain untested.
+
 ## Blockers / owner actions
 
-- **Owner: confirm the submission cut-off and video limits in the portal** (public pages say only "13 Oct").
+- **Owner:** create the portal project, inspect remaining submission fields and logo limits, record
+  and upload both videos, review and submit before **14 October 09:29 IST**. Do not ask the agent
+  to accept terms or submit the form on your behalf.
 - Published 2026-10-13 ~10:30 UTC with the owner's approval: branch + tag pushed, merged into main
   (`8fee39e`) and pushed, Vercel redeployed; hosted evidence re-verified (all checks passed).
 - **Owner: record demo + pitch, submit.**
@@ -103,6 +146,10 @@ Continue from this file and the actual code. Update after every milestone.
 
 ## Next concrete task
 
-Nothing pending on the code side. Owner: confirm the deadline in the portal, record demo + pitch,
-submit. Optional: open https://counterproof.vercel.app in a normal browser to see the first screen
-(the in-app browser blocks Vercel's scripts).
+The local submission fixes are implemented and verified. Review docs/SUBMISSION_FINAL.md and the
+release package, authorize publication if desired, then record/upload the two videos and complete
+the portal project and submission yourself. A local production snapshot preview is available at
+http://127.0.0.1:3101 for recording; it displays recorded evidence and runs no evaluator jobs.
+Do not mark videos, external-agent evaluation or outside reproduction complete until the actual
+artifacts or independent work exist. No commit, push, deploy or new testnet transaction has occurred
+in this session.

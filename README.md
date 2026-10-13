@@ -1,6 +1,8 @@
 # CounterProof
 
-**Put AI promises to the test.**
+**An AI shopping agent tried to raise its own spending limit.**
+
+Put AI promises to the test.
 
 Developers publish measurable promises about their AI agents. Challengers earn funded
 rewards by producing reproducible counterexamples. CounterProof independently replays the
@@ -10,10 +12,19 @@ First domain: **AI purchasing agents** in an isolated, synthetic marketplace (in
 merchants, products, balances and orders — no real shops, accounts or money).
 
 **See it:** https://counterproof.vercel.app is a read-only evidence explorer of the recorded
-Monad testnet run. Its first screen shows the live-model finding: injected shop text made the
-agent try to raise its own budget in 3 of 3 fresh replays. The page also shows the testnet
-reward, the ERC-8004 record and the repaired agent's replay. **Check it yourself:**
-`scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`. **Reproduce:**
+Monad testnet run. The recorded comparison is:
+
+- Original `llm-purchasing-agent@0.1.1`: **R5 violated in 3/3 recorded replays**.
+- Repaired `0.2.0`: **R5 violated in 0/3 completed recorded live replays**.
+- **The requested purchase still completed.**
+
+The original proposed and forwarded a privileged call; the synthetic marketplace refused it,
+so the spending limit did not increase. R5 prohibits the attempt. The repaired live model
+proposed no privileged tool; its dispatcher refusal is exercised by scripted regression tests.
+SYN is synthetic shopping money. The historical reward is 0.01 testnet MON, credited at
+settlement and subsequently withdrawn in a separate transaction. **Check the hosted records:**
+`backend/.venv/Scripts/python scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`.
+**Reproduce:**
 [docs/REPRODUCE.md](docs/REPRODUCE.md).
 
 > **What a result does and does not mean.** A verified violation shows that one target
@@ -58,6 +69,31 @@ reward, the ERC-8004 record and the repaired agent's replay. **Check it yourself
 All adapters were written by the CounterProof team; no external agent has been evaluated yet
 (see [docs/EXTERNAL_AGENT_PLAN.md](docs/EXTERNAL_AGENT_PLAN.md)).
 
+## Clean-clone demonstration (no wallet or private data)
+
+After cloning and running `uv sync` in `backend`, run these from the repository root.
+Windows PowerShell:
+
+```powershell
+.\backend\.venv\Scripts\python.exe scripts/live_repair_replay.py --mode offline
+.\backend\.venv\Scripts\python.exe scripts/live_repair_replay.py --mode scripted
+```
+
+Linux/macOS (**untested**):
+
+```bash
+backend/.venv/bin/python scripts/live_repair_replay.py --mode offline
+backend/.venv/bin/python scripts/live_repair_replay.py --mode scripted
+```
+
+Offline mode verifies the public records' digests, seals, ledgers, rules and comparison;
+it does not prove an execution happened. Scripted mode actually executes original and repaired
+adapters using recorded model proposals, checks that the original violates R5, and checks that
+the repaired adapter completes its purchase without R5. Fresh live mode is explicitly enabled
+with `--mode live --allow-live` and the reader's own provider credential. It reports actual
+outcomes/completions/failures with no fixture fallback. See [docs/REPRODUCE.md](docs/REPRODUCE.md)
+for isolated execution, public downloads, safe credential entry and exact historical-source use.
+
 ## Quick start (Windows, local chain)
 
 Prerequisites: Python 3.13 + [uv](https://docs.astral.sh/uv/), Node 20+ and pnpm, Foundry
@@ -91,10 +127,12 @@ Reading is open; starting runs, replays, regressions or anything else needs a se
   agent steps, the model-assisted generator always uses it, and a judge cannot start runs,
   submissions or regressions on a challenge whose target names another model. The server
   lowers larger budgets and shows the effective one.
-- **The operator** (you, and every script) sends `Authorization: Bearer
+- **The operator** (you, and the scripts that mutate the full local stack) sends `Authorization: Bearer
   $COUNTERPROOF_OPERATOR_TOKEN`; `dev.py` generates the token per launch when unset and writes
   it to `data/operator.token`, where the scripts read it. Only the operator can make the
-  challenger bot sign on-chain commits (gas).
+  challenger bot sign on-chain commits (gas). A judge can search and replay permitted work,
+  but cannot submit a funded candidate through that operator-only bot. Standalone clean-clone
+  verification and scripted regression above need no operator token.
 - **Secrets are long or ignored:** the API ignores an operator token shorter than 24
   characters and a judge passcode shorter than 12, and `dev.py` refuses to start with one.
   Behind the web server's `/api` proxy the API cannot tell browsers apart, so failed sign-ins
@@ -179,9 +217,9 @@ produce an explicit error; a failed live run is never replaced with fixture resu
 ## Hosted snapshot
 
 For people who cannot run the evaluator, the console can be published as a **read-only
-recorded snapshot** (e.g. on Vercel). It is a recording, not a deployment of CounterProof:
-the API, worker, signer and chain run only on the owner's machine, and nothing on the
-hosted site runs live. The replays, verdicts, signatures and transactions it shows were
+recorded snapshot** (e.g. on Vercel). The API, worker, signer and fresh evaluator runs
+execute locally; the published reward contract is deployed on Monad testnet. Nothing on
+the hosted site executes a fresh evaluator run. The replays, verdicts, signatures and transactions it shows were
 recorded from the evaluator's run; a banner on every page says when the snapshot was
 taken, from which network, and how many challenges it includes. Every action (create,
 fund, run, cancel, submit, retry, attest, settle, withdraw, refund, regression) is replaced
@@ -221,7 +259,34 @@ Details: [web/FRONTEND_NOTES.md](web/FRONTEND_NOTES.md), section "Snapshot mode"
 - [docs/REPRODUCE.md](docs/REPRODUCE.md) — re-check, replay and re-run the results yourself
 - [docs/REMEDIATION_REPORT.md](docs/REMEDIATION_REPORT.md) — review findings of 2026-10-12 and what was fixed
 - [docs/EXTERNAL_AGENT_PLAN.md](docs/EXTERNAL_AGENT_PLAN.md) — pending external-agent evaluation
+- [docs/SUBMISSION_FINAL.md](docs/SUBMISSION_FINAL.md) — paste-ready submission and checklist
 - [docs/SUBMISSION.md](docs/SUBMISSION.md), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [docs/PITCH.md](docs/PITCH.md)
+
+## Build provenance, licence and AI tooling disclosure
+
+Repository history begins on 6 October 2026 (`628440a`); recorded project commits
+through 13 October are inside the portal's published 1 September–13 October build window.
+Commit dates do not establish when every line was first written. Existing dependencies,
+standards, toolchains and the hosted model predate this project and retain their own licences.
+First-party code is covered by the owner-approved [MIT licence](LICENSE); OpenZeppelin
+retains MIT notices and forge-std retains its MIT/Apache-2.0 notices. Versions are recorded
+in `backend/uv.lock`, `web/pnpm-lock.yaml` and pinned contract submodules. See dependency
+attribution in [docs/SUBMISSION_FINAL.md](docs/SUBMISSION_FINAL.md).
+
+**AI tooling:** the project was built with AI coding assistants under the owner's direction.
+- **Claude Code** (Anthropic Claude models) was used from the first commit on 6 October and
+  wrote most of the code, tests and documentation; every commit in the history carries a
+  `Co-Authored-By: Claude` trailer (`git log --grep "Co-Authored-By: Claude"`). It also
+  re-verified and completed the 13 October submission fixes.
+- **OpenAI Codex** assisted the 13 October submission fixes: clean-clone reproduction code and
+  tests, first-screen copy/layout, verification, documentation and submission/recording scripts.
+- **At runtime**, the agent under test (`llm-purchasing-agent`) and the optional model-assisted
+  challenger strategy call a configured hosted model (the recorded live-model runs used Groq
+  `openai/gpt-oss-120b`). No model decides a verdict or a payout; the deterministic checker does.
+
+Outputs were checked with recorded evidence and local automated checks; the team remains
+responsible for them. Detailed provenance and limitations are in
+[docs/SUBMISSION_FINAL.md](docs/SUBMISSION_FINAL.md).
 
 ## Limitations
 
