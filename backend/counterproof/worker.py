@@ -43,6 +43,24 @@ def _sync_domain_after_recovery(conn, changed: list[dict]) -> None:
             conn.execute("UPDATE regressions SET status=? WHERE id=?", (status, p["regression_id"]))
 
 
+def _effective_budget(run: dict, spec: dict) -> dict:
+    """Defence in depth: clamp the stored budget again to the owner's role caps before the
+    harness sees it (rows queued before the API clamped, or edited in the database)."""
+    from .limits import clamp_budget, role_of
+    from .targets import registry
+
+    target = registry.ADAPTERS.get(f"{spec['target']['adapter']}@{spec['target']['version']}")
+    model_involved = run["mode"] == "model-assisted" or bool(target and target.requires_model)
+    budget, _ = clamp_budget(run["budget"], role_of(run.get("owner")), model_involved)
+    return budget
+
+
+def _bind_spend(client, owner: str | None, job_id: str | None) -> None:
+    """Attribute the client's model calls to who queued the job (ledger, per-session budget)."""
+    client.owner = owner
+    client.job_id = job_id
+
+
 class Worker:
     def __init__(self, name: str | None = None, poll: float = 0.5):
         self.name = name or f"{socket.gethostname()}:{os.getpid()}"
@@ -137,10 +155,11 @@ class Worker:
         from .providers import broker_for_spec, provenance_for
 
         challenger, recipient = challenger_identity()
-        budget = Budget(**{k: v for k, v in run["budget"].items() if k in Budget.__dataclass_fields__})
+        budget = Budget(**{k: v for k, v in _effective_budget(run, spec).items() if k in Budget.__dataclass_fields__})
         broker = broker_for_spec(spec, budget)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, run.get("owner"), run.get("job_id"))
         last = [0.0]
 
         def progress(record: dict) -> None:
@@ -153,6 +172,7 @@ class Worker:
 
             gen = ModelAssisted(spec, run["params"], budget)
             gen.client.cancel = cancel
+            _bind_spend(gen.client, run.get("owner"), run.get("job_id"))
             proposals, model_label = gen.proposals(), gen.label
         else:
             proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, run["params"]), None
@@ -206,6 +226,7 @@ class Worker:
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, e.get("owner"), e.get("job_id"))
         recorder = recording_broker(broker)  # what the model proposed, per replay (sidecar, not evidence)
         bundle = evaluate(spec=spec, spec_dgst=d, candidate=candidate, submission=submission,
                           broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
@@ -227,6 +248,7 @@ class Worker:
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, r.get("owner"), r.get("job_id"))
         recorder = recording_broker(broker)
         bundle = evaluate(spec=spec, spec_dgst=r["spec_digest"], candidate=candidate,
                           submission={"submission_id": f"regression:{rid}", "challenger": candidate["challenger"],

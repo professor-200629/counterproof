@@ -14,16 +14,23 @@ from .db import dumps, new_id, now, row, tx
 STALE_SECONDS = 30
 
 
-def enqueue(conn: sqlite3.Connection, kind: str, params: dict, max_attempts: int = 2) -> str:
+def enqueue(conn: sqlite3.Connection, kind: str, params: dict, max_attempts: int = 2, owner: str | None = None) -> str:
+    """owner: who queued it ("operator", "judge:sess_..."); capacity is checked by the caller
+    (limits.check_capacity) inside the same transaction."""
     jid = new_id("job")
-    conn.execute("INSERT INTO jobs(id, kind, status, params, max_attempts, created_at) VALUES (?,?,?,?,?,?)",
-                 (jid, kind, "queued", dumps(params), max_attempts, now()))
+    conn.execute("INSERT INTO jobs(id, kind, status, params, max_attempts, created_at, owner) VALUES (?,?,?,?,?,?,?)",
+                 (jid, kind, "queued", dumps(params), max_attempts, now(), owner))
     return jid
 
 
 def claim(conn: sqlite3.Connection, worker: str) -> dict | None:
+    """The oldest queued job, or None. Nothing is claimed while the operator stop is in effect."""
+    from .limits import stop_state
+
     t = now()
     with tx(conn):
+        if stop_state(conn):
+            return None
         r = conn.execute(
             "UPDATE jobs SET status='running', worker=?, attempts=attempts+1, started_at=?, heartbeat_at=? "
             "WHERE id = (SELECT id FROM jobs WHERE status='queued' ORDER BY created_at, rowid LIMIT 1) RETURNING *",
@@ -79,6 +86,11 @@ def recover(conn: sqlite3.Connection, stale_seconds: int = STALE_SECONDS) -> lis
                              (now(), f"interrupted: the worker stopped while running (after {j['attempts']} attempts)", j["id"]))
                 changed.append({"id": j["id"], "kind": j["kind"], "to": "failed"})
     return changed
+
+
+def active(conn: sqlite3.Connection) -> list[dict]:
+    """Every queued or running job (for the operator stop and status)."""
+    return [row(r) for r in conn.execute("SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY created_at, rowid")]
 
 
 def get(conn: sqlite3.Connection, job_id: str) -> dict | None:

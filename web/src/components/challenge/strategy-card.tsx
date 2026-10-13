@@ -8,19 +8,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { NumberField, Select } from "@/components/ui/form";
 import { ErrorState } from "@/components/ui/states";
-import type { AppConfig, SpecRule, Strategy } from "@/lib/api";
-import { useStartRun } from "@/lib/queries";
+import { sessionLimits, type AppConfig, type RoleLimits, type SpecRule, type Strategy } from "@/lib/api";
+import { useSession, useStartRun } from "@/lib/queries";
 import { DataPairs } from "@/components/evidence/values";
 import { Mono } from "@/components/ui/text-link";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /**
  * Budget the form starts with. These mirror the defaults the backend applies when no
- * budget is sent (services.start_run); the form always sends the values shown, so what
- * you see is exactly what the run gets.
+ * budget is sent (limits.clamp_budget), lowered to the server's caps for this session; the
+ * server clamps whatever is sent to those caps and the run shows its effective budget.
  */
-function initialBudget(modelDriven: boolean) {
-  return modelDriven ? { max_sequences: 12, max_wall_seconds: 900 } : { max_sequences: 120, max_wall_seconds: 90 };
+export function initialBudget(modelDriven: boolean, caps?: RoleLimits | null) {
+  const d = modelDriven ? { max_sequences: 12, max_wall_seconds: 900 } : { max_sequences: 120, max_wall_seconds: 90 };
+  return caps
+    ? { max_sequences: Math.min(d.max_sequences, caps.max_sequences), max_wall_seconds: Math.min(d.max_wall_seconds, caps.max_wall_seconds) }
+    : d;
 }
 
 export interface StrategyCardProps {
@@ -38,9 +41,14 @@ export interface StrategyCardProps {
 export function StrategyCard({ strategy, challengeId, rules, config, targetRequiresModel, blockedReason }: StrategyCardProps) {
   const isModel = strategy.mode === "model-assisted";
   const start = useStartRun(challengeId);
-  const init = initialBudget(isModel || targetRequiresModel);
-  const [maxSeq, setMaxSeq] = useState<number | null>(init.max_sequences);
-  const [maxWall, setMaxWall] = useState<number | null>(init.max_wall_seconds);
+  const session = useSession();
+  const caps = sessionLimits(session.data);
+  const init = initialBudget(isModel || targetRequiresModel, caps);
+  // undefined = not edited yet: follow the defaults and the caps once the session loads.
+  const [seqInput, setMaxSeq] = useState<number | null | undefined>(undefined);
+  const [wallInput, setMaxWall] = useState<number | null | undefined>(undefined);
+  const maxSeq = seqInput === undefined ? init.max_sequences : seqInput;
+  const maxWall = wallInput === undefined ? init.max_wall_seconds : wallInput;
   const providers = config?.providers ?? [];
   const configured = providers.filter((p) => p.configured);
   // The user's explicit choice; until they pick one, follow the backend's live-model provider
@@ -128,7 +136,8 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
                 hint={
                   selected
                     ? selected.configured
-                      ? `Model: ${model ?? "provider default"}. Key from ${selected.key_env} on the backend.`
+                      ? `Model: ${model ?? "provider default"}. Key from ${selected.key_env} on the backend.` +
+                        (caps?.model ? ` Judge sessions always use ${caps.model}.` : "")
                       : `Set ${selected.key_env} on the backend to use ${selected.provider}.`
                     : undefined
                 }
@@ -148,7 +157,7 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
               value={maxSeq}
               onChange={setMaxSeq}
               min={1}
-              max={100000}
+              max={caps?.max_sequences ?? 100000}
               unit="seq"
             />
             <NumberField
@@ -157,9 +166,17 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
               value={maxWall}
               onChange={setMaxWall}
               min={1}
-              max={86400}
+              max={caps?.max_wall_seconds ?? 86400}
               unit="s"
             />
+            {caps ? (
+              <p className="col-span-2 text-xs text-muted">
+                Server caps for {session.data?.authenticated && session.data.role === "operator" ? "the operator" : "a judge session"}:{" "}
+                {caps.max_sequences} sequences, {caps.max_wall_seconds} s
+                {isModel || targetRequiresModel ? `, ${caps.max_model_calls} model calls, ${caps.max_model_tokens} tokens` : ""} per
+                run. The server lowers anything above them.
+              </p>
+            ) : null}
           </fieldset>
         )}
       </CardBody>
@@ -180,6 +197,11 @@ export function StrategyCard({ strategy, challengeId, rules, config, targetRequi
               <span className="tabular">
                 {start.data.budget.max_sequences} sequences / {start.data.budget.max_wall_seconds} s
               </span>
+              {start.data.budget_clamped && Object.keys(start.data.budget_clamped).length > 0
+                ? ` (lowered by the server: ${Object.entries(start.data.budget_clamped)
+                    .map(([k, v]) => `${k.replaceAll("_", " ")} ${String(v.requested)} -> ${v.effective}`)
+                    .join(", ")})`
+                : ""}
               . It appears in the run list below.
             </p>
           ) : null}

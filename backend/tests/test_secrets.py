@@ -11,6 +11,8 @@ SECRET_ENV = {
     "COUNTERPROOF_CHALLENGER_PRIVATE_KEY": "0x" + "c1" * 32,
     "COUNTERPROOF_SIGNER_TOKEN": "tok" + "t" * 30,
     "GROQ_API_KEY": "gsk_" + "g" * 40,
+    "COUNTERPROOF_OPERATOR_TOKEN": "op" + "o" * 30,
+    "COUNTERPROOF_JUDGE_PASSCODE": "judge-passcode-" + "j" * 10,
 }
 
 
@@ -26,7 +28,8 @@ def envfile(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("role,expected", [
-    ("api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY"}),
+    ("api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY",
+             "COUNTERPROOF_OPERATOR_TOKEN", "COUNTERPROOF_JUDGE_PASSCODE"}),  # auth secrets: the API only
     ("worker", {"COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY"}),
     ("signer", {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"}),
 ])

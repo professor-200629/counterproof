@@ -15,15 +15,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 PROVIDER_KEYS = {"GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"}
+# Operator bearer token and judge passcode (auth.py): only the API process checks them.
+API_AUTH_SECRETS = {"COUNTERPROOF_OPERATOR_TOKEN", "COUNTERPROOF_JUDGE_PASSCODE"}
 # Which secrets each process may load from .env. Everything else that looks secret is
 # skipped, so e.g. the API and worker never hold the evaluator's signing key.
 ROLE_SECRETS = {
     "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"},
-    "api": {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
+    "api": {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS | API_AUTH_SECRETS,
     "worker": {"COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "script": None,  # deployment/key scripts may read everything
 }
-SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "MNEMONIC", "PASSWORD")
+SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "MNEMONIC", "PASSWORD", "PASSCODE")
+# Numeric limits whose names contain a hint ("TOKEN") but which are not secrets (limits.py).
+NOT_SECRET = {"COUNTERPROOF_DAILY_TOKEN_CEILING", "COUNTERPROOF_JUDGE_DAILY_TOKENS", "COUNTERPROOF_OPERATOR_DAILY_TOKENS",
+              "COUNTERPROOF_JUDGE_MAX_MODEL_TOKENS", "COUNTERPROOF_OPERATOR_MAX_MODEL_TOKENS"}
 
 
 def role() -> str:
@@ -46,7 +51,7 @@ def _load_dotenv() -> None:
         k, v = k.strip(), v.strip().strip('"').strip("'")
         if not v:
             continue
-        if allowed is not None and any(h in k.upper() for h in SECRET_HINTS) and k not in allowed:
+        if allowed is not None and k not in NOT_SECRET and any(h in k.upper() for h in SECRET_HINTS) and k not in allowed:
             continue
         os.environ.setdefault(k, v)
 

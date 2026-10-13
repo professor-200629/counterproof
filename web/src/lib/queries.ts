@@ -8,6 +8,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/re
 import {
   ApiError,
   api,
+  setCsrfToken,
   type Digest,
   type JsonObject,
   type ReportableTxKind,
@@ -21,6 +22,7 @@ export const POLL_MS = 1500;
 
 /** Query keys. Everything about one challenge lives under ["challenge", id]. */
 export const qk = {
+  session: ["session"] as const,
   config: ["config"] as const,
   erc8004: ["erc8004"] as const,
   targets: ["targets"] as const,
@@ -77,6 +79,46 @@ export function pollIf(poll: boolean | undefined): number | false {
 
 // ---------------------------------------------------------------------------- reads
 /** Backend configuration: network, chain, evaluator, signer, isolation, providers. */
+/**
+ * Who this browser is (judge / operator session, or nobody), the server's caps for that role
+ * and today's usage. Never fetched in snapshot mode (nothing can be changed there). Keeps the
+ * CSRF token in memory for lib/api.ts.
+ */
+export function useSession(opts: QueryOpts = {}) {
+  return useQuery({
+    queryKey: qk.session,
+    queryFn: async () => {
+      const s = await api.getSession();
+      setCsrfToken(s.authenticated ? s.csrf_token : null);
+      return s;
+    },
+    staleTime: 15_000,
+    enabled: !SNAPSHOT_MODE && (opts.enabled ?? true),
+  });
+}
+
+export function useSignIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (passcode: string) => api.signIn(passcode),
+    onSuccess: (session) => {
+      qc.setQueryData(qk.session, session);
+      // Requests refused before sign-in (e.g. the create form's spec preview) try again now.
+      void qc.refetchQueries({ type: "active", predicate: (q) => q.state.status === "error" });
+    },
+  });
+}
+
+export function useSignOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.signOut(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: qk.session });
+    },
+  });
+}
+
 export function useConfig(opts: QueryOpts = {}) {
   return useQuery({ queryKey: qk.config, queryFn: api.getConfig, staleTime: 30_000, enabled: opts.enabled ?? true });
 }
@@ -258,6 +300,7 @@ function useInvalidateChallenge(challengeId: number | string) {
     void qc.invalidateQueries({ queryKey: qk.challenge(challengeId) });
     void qc.invalidateQueries({ queryKey: qk.challenges });
     void qc.invalidateQueries({ queryKey: qk.overview });
+    void qc.invalidateQueries({ queryKey: qk.session }); // active jobs and usage changed
   };
 }
 

@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import httpx  # noqa: E402
+import operator_auth  # noqa: E402  - the API refuses changes without the operator token
 
 from counterproof import devchain  # noqa: E402
 
@@ -41,7 +42,7 @@ RULES = [
 
 class Api:
     def __init__(self) -> None:
-        self.c = httpx.Client(base_url=API, timeout=120)
+        self.c = httpx.Client(base_url=API, timeout=120, headers=operator_auth.require_headers())
 
     def get(self, p):
         r = self.c.get(p)

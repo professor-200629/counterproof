@@ -133,6 +133,8 @@ class ChatClient:
     paced_seconds: float = 0.0
     rate_limited_seconds: float = 0.0
     cancel: threading.Event | None = None  # set by the worker; waits end early when it fires
+    owner: str | None = None   # who queued the job (limits.py ledger and per-session budget); set by the worker
+    job_id: str | None = None
 
     def _sleep(self, seconds: float) -> None:
         if self.cancel is not None:
@@ -173,6 +175,11 @@ class ChatClient:
                 raise ProviderError("cancelled", kind="cancelled")
             if tpm:
                 self.paced_seconds += PACER.wait(f"{self.provider}/{self.model}", tpm, estimate, sleep=self._sleep)
+            refusal = spend_refusal(self.owner)
+            if refusal:
+                # A provider-side refusal: the runner records runner_failure (retryable), never a verdict.
+                self.errors.append(refusal)
+                raise ProviderError(f"{self.provider}/{self.model} not called: {refusal}", kind="unavailable")
             try:
                 r = httpx.post(url, json=body, timeout=TIMEOUT_S,
                                headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"})
@@ -191,6 +198,7 @@ class ChatClient:
                         self.calls += 1
                         self.prompt_tokens += int(usage.get("prompt_tokens") or 0)
                         self.completion_tokens += int(usage.get("completion_tokens") or 0)
+                    record_spend(self, int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
                     choice = (data.get("choices") or [{}])[0]
                     msg = choice.get("message") or {}
                     return {"model": data.get("model", self.model), "finish_reason": choice.get("finish_reason"),
@@ -230,6 +238,30 @@ class ChatClient:
                 break
         self.errors.append(last)
         raise ProviderError(f"{self.provider}/{self.model} failed after {attempt} attempt(s): {last}", kind=kind)
+
+
+def spend_refusal(owner: str | None) -> str | None:
+    """Why the next model call must not be made (operator stop, global daily token ceiling or
+    this session's daily budget - limits.py), or None. If the ledger cannot be read the call
+    is refused: a cost control that fails open is not one."""
+    from .limits import guard_model_call
+
+    try:
+        return guard_model_call(owner)
+    except Exception as e:  # noqa: BLE001 - any ledger failure refuses the call
+        return f"cost ceiling could not be checked ({type(e).__name__}); call refused"
+
+
+def record_spend(client: "ChatClient", prompt_tokens: int, completion_tokens: int) -> None:
+    """One ledger row per successful call (tokens, owner, job, UTC day)."""
+    from .limits import record_usage
+
+    try:
+        record_usage(client.owner, client.job_id, client.provider, client.model, prompt_tokens, completion_tokens)
+    except Exception as e:  # noqa: BLE001 - the provider already answered; keep the answer, report the gap
+        import logging
+
+        logging.getLogger("counterproof.providers").warning("model usage not recorded: %s", type(e).__name__)
 
 
 class ModelBroker:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 
-SECRET_ENV_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "MNEMONIC")
+SECRET_ENV_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "PASSCODE", "MNEMONIC")
 PATTERNS = [
     re.compile(r"gsk_[A-Za-z0-9]{20,}"),          # Groq
     re.compile(r"sk-or-v1-[A-Za-z0-9]{20,}"),     # OpenRouter

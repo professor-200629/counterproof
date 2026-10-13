@@ -67,6 +67,25 @@ every view in its loading / error / not-found / empty / data state from real API
 resolved when `next build` / `next dev` starts, so set `BACKEND_URL` before building.
 In snapshot mode (section 12) there is no rewrite and no backend.
 
+The rewrite is an external rewrite, served by Next's `proxyRequest` (httpxy, `changeOrigin`):
+it forwards the browser's `Cookie`, `Origin` and `X-CSRF-Token` unchanged, returns the
+backend's `Set-Cookie` unchanged, rewrites `Host` to the backend and sends the browser's
+host as `X-Forwarded-Host` (the backend checks it against its allowed hosts).
+`src/lib/__tests__/rewrite-proxy.test.ts` drives that exact function. `scripts/dev.py` starts
+`next dev --hostname 127.0.0.1`, so the proxy is not reachable from the network.
+
+### Judge sign-in (live mode only)
+
+Reads are public; every change needs a session (backend `auth.py`). `JudgeSession` in the
+header (`components/shell/judge-session.tsx`) posts the passcode to `POST /api/session`; the
+backend sets an HttpOnly, SameSite=Strict cookie (Path=/api) and returns a CSRF token, which
+`lib/api.ts` keeps in memory only (`setCsrfToken`; re-read from `GET /api/session` after a
+reload) and sends as `X-CSRF-Token` on every mutation, with `credentials: "same-origin"`.
+A 401 on a mutation dispatches `AUTH_REQUIRED_EVENT`, which opens the panel; `ErrorState`
+shows 401/403/429/503 refusals in the server's words. `useSession()` (never in snapshot
+mode) gives the role, expiry, the server caps (`sessionLimits`) and today's usage; the
+run form starts within those caps and shows the effective budget the server applied.
+
 Env: `BACKEND_URL` (server), `NEXT_PUBLIC_DEV_WALLET=1` (adds the anvil mock connector),
 `NEXT_PUBLIC_ANVIL_RPC_URL` (optional, default `http://127.0.0.1:8545`),
 `NEXT_PUBLIC_SNAPSHOT=1` (read-only recorded snapshot, section 12).

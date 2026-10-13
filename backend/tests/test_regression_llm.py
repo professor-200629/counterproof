@@ -26,7 +26,7 @@ from challenge3 import (
     fake_broker_for_spec,
     load_snapshot,
 )
-from conftest import ALL_RULES, BUDGET_ATTACK, PUBLISHER, make_candidate, make_spec
+from conftest import ALL_RULES, BUDGET_ATTACK, OPERATOR_HEADERS, PUBLISHER, make_candidate, make_spec
 from fastapi.testclient import TestClient
 
 from counterproof import services
@@ -210,7 +210,7 @@ def client(monkeypatch):
     from counterproof import api
 
     api._local.conn = None
-    with TestClient(api.app) as c:
+    with TestClient(api.app, headers=OPERATOR_HEADERS) as c:
         yield c
     api._local.conn = None
 

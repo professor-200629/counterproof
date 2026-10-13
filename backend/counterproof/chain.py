@@ -258,19 +258,36 @@ def request_attestation_safely(conn: sqlite3.Connection, eid: str) -> None:
 
 
 # --------------------------------------------------------------------------- settlement & payouts
+TX_KINDS = ("fund", "commit", "settle", "refund", "withdraw", "deploy")
+
+
+def _own_events(event, rcpt) -> list:
+    """Decoded events of this type emitted by the configured contract only. web3 decodes any
+    log whose ABI matches, whichever contract emitted it, so the emitter is checked here."""
+    contract_addr = (settings().contract or "").lower()
+    return [e for e in event.process_receipt(rcpt) if str(e["address"]).lower() == contract_addr]
+
+
 def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind: str) -> dict:
-    """Record a settle/refund/withdraw transaction from its receipt and events."""
+    """Record a settle/refund/withdraw transaction from its receipt and events. The receipt must
+    be a transaction to the configured contract, only that contract's logs count, and settle
+    and refund events must name this challenge's on-chain id."""
     web3, c, rcpt = _receipt(tx_hash)
     cid = challenge_row["id"]
     frm = rcpt["from"].lower()
+    if rcpt.to is None or rcpt.to.lower() != (settings().contract or "").lower():
+        raise ChainError("transaction was not sent to the CounterProof contract")
+    if kind in ("settle", "refund") and not challenge_row.get("onchain_id"):
+        raise ChainError("this challenge has no on-chain id; nothing to settle or refund")
     if rcpt.status != 1:
         _track(conn, tx_hash, kind, "failed", cid, frm, block=rcpt.blockNumber, error="reverted")
         log_activity(conn, f"{kind}.failed", f"{kind} transaction reverted on {network_label()}", cid, tx_hash.lower())
         return {"status": "failed"}
     detail: dict = {}
     if kind == "settle":
-        evs = c.events.ChallengeSettled().process_receipt(rcpt)
-        if not evs or str(evs[0]["args"]["challengeId"]) != challenge_row["onchain_id"]:
+        evs = [e for e in _own_events(c.events.ChallengeSettled(), rcpt)
+               if str(e["args"]["challengeId"]) == str(challenge_row["onchain_id"])]
+        if not evs:
             raise ChainError("no ChallengeSettled event for this challenge in the transaction")
         a = evs[0]["args"]
         detail = {"submission_id": "0x" + bytes(a["submissionId"]).hex(), "recipient": a["recipient"].lower(),
@@ -278,14 +295,15 @@ def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind:
         conn.execute("UPDATE challenges SET status='settled', updated_at=? WHERE id=?", (now(), cid))
         msg = f"Settled on {network_label()}: {a['reward']} wei credited to {detail['recipient']}"
     elif kind == "refund":
-        evs = c.events.ChallengeRefunded().process_receipt(rcpt)
+        evs = [e for e in _own_events(c.events.ChallengeRefunded(), rcpt)
+               if str(e["args"]["challengeId"]) == str(challenge_row["onchain_id"])]
         if not evs:
-            raise ChainError("no ChallengeRefunded event in the transaction")
+            raise ChainError("no ChallengeRefunded event for this challenge in the transaction")
         conn.execute("UPDATE challenges SET status='refunded', updated_at=? WHERE id=?", (now(), cid))
         detail = {"publisher": evs[0]["args"]["publisher"].lower(), "reward_wei": str(evs[0]["args"]["reward"])}
         msg = f"Refunded on {network_label()}: reward returned to the publisher's credit"
     elif kind == "withdraw":
-        evs = c.events.Withdrawn().process_receipt(rcpt)
+        evs = _own_events(c.events.Withdrawn(), rcpt)
         if not evs:
             raise ChainError("no Withdrawn event in the transaction")
         a = evs[0]["args"]
@@ -299,7 +317,20 @@ def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind:
 
 
 def record_failed_tx(conn: sqlite3.Connection, challenge_id: int, tx_hash: str | None, kind: str, error: str) -> None:
-    """A wallet rejection or a send error reported by the browser (no receipt exists)."""
+    """A wallet rejection or a send error reported by the browser (no receipt exists). The
+    browser's report never overwrites a transaction already confirmed from its receipt."""
+    import re
+
+    if kind not in TX_KINDS:
+        raise ChainError(f"unknown transaction kind {kind!r}")
+    if tx_hash is not None and not re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash):
+        raise ChainError("tx_hash must be a 32-byte hex transaction hash")
     log_activity(conn, f"{kind}.failed", f"{kind} not sent: {redact(error)[:200]}", challenge_id, tx_hash)
     if tx_hash:
-        _track(conn, tx_hash, kind, "failed", challenge_id, None, error=redact(error)[:300])
+        s = settings()
+        conn.execute("INSERT INTO transactions(hash, chain_id, kind, status, challenge_id, from_addr, detail, block_number, error, "
+                     "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(chain_id, hash) DO UPDATE SET "
+                     "status=excluded.status, error=excluded.error, updated_at=excluded.updated_at "
+                     "WHERE transactions.status != 'confirmed'",
+                     (tx_hash.lower(), s.chain_id, kind, "failed", challenge_id, None, dumps({}), None, redact(error)[:300],
+                      now(), now()))

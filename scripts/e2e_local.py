@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import httpx  # noqa: E402
 
 from counterproof import devchain  # noqa: E402
+from counterproof.limits import FORWARDED_SETTINGS  # noqa: E402
 
 PY = str(ROOT / "backend" / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python"))
 K = devchain.ANVIL_KEYS
@@ -53,7 +54,9 @@ class Stack:
         """provider_env: live-model provider settings and key, given to the API and worker only."""
         self.api_port, self.signer_port = devchain.free_port(), devchain.free_port()
         token = secrets.token_hex(16)
-        common = {k: v for k, v in os.environ.items() if not any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET"))}
+        common = {k: v for k, v in os.environ.items()
+                  if not any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET", "PRIVATE", "PASSWORD", "PASSCODE"))}
+        common |= {k: v for k, v in os.environ.items() if k in FORWARDED_SETTINGS}  # limits (not secrets)
         common |= {"COUNTERPROOF_DATA_DIR": str(data_dir), "COUNTERPROOF_NETWORK": network,
                    "COUNTERPROOF_RPC_URL": anvil_url, "COUNTERPROOF_CONTRACT": contract,
                    "COUNTERPROOF_EVALUATOR_ADDRESS": devchain.address_of(evaluator_key).lower(),
@@ -66,13 +69,14 @@ class Stack:
         self.procs = []
         for name, module, extra in (
             ("signer", "counterproof.signer", {"EVALUATOR_PRIVATE_KEY": evaluator_key, "COUNTERPROOF_SIGNER_PORT": str(self.signer_port)}),
-            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key} | (provider_env or {})),
+            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key} | (provider_env or {})
+             | self._operator_env()),
             ("worker", "counterproof.worker", dict(provider_env or {})),
         ):
             f = open(logs / f"{name}.log", "wb")
             self.procs.append(subprocess.Popen([PY, "-m", module], cwd=str(ROOT / "backend"), env=common | extra,
                                                stdout=f, stderr=subprocess.STDOUT))
-        self.api = httpx.Client(base_url=f"http://127.0.0.1:{self.api_port}", timeout=60)
+        self.api = httpx.Client(base_url=f"http://127.0.0.1:{self.api_port}", timeout=60, headers=self.operator_headers)
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             try:
@@ -90,6 +94,19 @@ class Stack:
                 time.sleep(0.5)
         else:
             raise RuntimeError("signer did not start; see logs in " + str(logs))
+
+    # --- operator authentication (backend/counterproof/auth.py) --------------------------
+    # The API refuses every change without credentials. This stack generates its own operator
+    # token, gives it to the API process only, and its client sends it as a bearer token.
+    def _operator_env(self) -> dict:
+        if not getattr(self, "operator_token", None):
+            self.operator_token = secrets.token_urlsafe(32)
+        return {"COUNTERPROOF_OPERATOR_TOKEN": self.operator_token}
+
+    @property
+    def operator_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._operator_env()['COUNTERPROOF_OPERATOR_TOKEN']}"}
+    # --------------------------------------------------------------------------------------
 
     def close(self) -> None:
         for p in self.procs:

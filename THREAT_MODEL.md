@@ -49,8 +49,22 @@ process, curious users of the web UI.
 | 22 | Reputation feedback without a real settlement, or with swapped evidence | Reporter reads the challenge status, spec digest and the `ChallengeSettled` evidence digest from chain and re-verifies the bundle | `test_reporter_refuses_self_feedback_and_unsettled_or_tampered_results` (fork) |
 | 23 | Self-review | ERC-8004 forbids feedback from the agent's owner/operator; the reporter is a separate key and checks `isAuthorizedOrOwner` first | same |
 | 24 | A rehearsal mistaken for Monad testnet | Fork rehearsals write only under `data/fork-rehearsal/`, never `.env` or `docs/deployments`; the API labels the network "FORK REHEARSAL"; the snapshot exporter refuses it | `scripts/testnet.py`, `scripts/export_snapshot.py` |
+| 25 | Anyone who can reach the console starts runs, spends model tokens or challenger-bot gas, cancels other people's work | Reads are public; every POST/PUT/PATCH/DELETE needs the operator bearer token or a judge/operator cookie session (one app-wide dependency, so new routes are covered). Judge sessions: passcode sign-in (rate-limited per client and overall), 8 h, HttpOnly SameSite=Strict cookie, only its hash stored. No secrets configured = every change refused. Submitting through the challenger bot on an on-chain challenge (gas) is operator-only; judges cancel and retry only their own work | `test_every_mutation_route_refuses_anonymous_callers`, `test_candidate_submit_on_chain_is_operator_only`, `test_a_judge_cannot_cancel_another_judges_run_but_the_operator_can` |
+| 26 | Cross-site request forgery, DNS rebinding, LAN exposure | Cookie changes need `X-CSRF-Token` and an allowed Origin/Referer; CORS allows no credentials; Host and the proxy's X-Forwarded-Host must be allowed hosts; `scripts/dev.py` binds the Next dev server to 127.0.0.1 | `test_judge_cookie_needs_csrf_token_and_allowed_origin`, `test_unknown_host_and_forwarded_host_are_refused`, web `rewrite-proxy.test.ts` |
+| 27 | Unbounded cost: huge budgets, other models, queue flooding, runaway model spend | Role caps clamp every run budget (0 never means unlimited) and are re-applied by the worker; judges' model work is fixed to the configured provider/model at temperature 0; per-session active-job limit and a global queue limit (429); a per-call token ledger with per-session daily budgets and a global daily ceiling; the operator stop (503, workers claim nothing). A refused model call is a provider failure (`runner_failure`, retryable), never `target_crash` | `test_judge_budget_is_clamped_to_the_cap_and_recorded_in_the_job`, `test_per_session_active_jobs_and_the_global_queue_limit`, `test_token_ceiling_refuses_new_model_jobs_and_in_flight_calls`, `test_operator_stop_cancels_refuses_and_fails_model_calls_as_unavailable` |
+| 28 | A receipt or event from another contract, or for another challenge, settles or refunds this one; a browser report overwrites a confirmed transaction | `verify_tx` requires the receipt's `to` to be the configured contract, counts only logs that contract emitted, and binds settle/refund events to the challenge's on-chain id; failed-transaction reports are validated and never overwrite a confirmed row | `test_verify_tx_rejects_receipts_and_logs_from_other_contracts`, `test_verify_tx_on_a_local_chain_binds_contract_and_challenge`, `test_failed_tx_reports_are_validated_and_never_overwrite_a_confirmed_row` |
 
 ## Residual risks (accepted for the MVP, stated plainly)
+
+- **The demo gate is not an account system.** One shared judge passcode; sessions are
+  revocable one by one (sign-out) but the passcode itself is rotated by restarting with a
+  new one. Behind the Next.js proxy every sign-in comes from 127.0.0.1, so the per-client
+  attempt limit can only tell clients apart by X-Forwarded-For (forgeable); the overall
+  limit (30 failures a minute) still holds. Pick a passcode that is not guessable at that rate.
+- **Stopping is cooperative.** The operator stop and the token ceilings refuse every new
+  job and every next model call at once, but a sequence or model call already in flight
+  finishes first (a model call can take a minute, longer while the provider rate-limits).
+  The ceiling can be overshot by the calls in flight at the moment it is reached.
 
 - **The evaluator is trusted.** A compromised or dishonest evaluator key can authorise a
   payout to any submission committed to its challenges. Mitigations are operational
