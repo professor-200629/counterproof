@@ -38,6 +38,7 @@ export const qk = {
   evaluation: (id: string) => ["evaluation", id] as const,
   evidence: (digest: string) => ["evidence", digest] as const,
   regression: (id: string) => ["regression", id] as const,
+  modelProposals: (digest: string) => ["model-proposals", digest] as const,
   regressionExport: (id: string) => ["regression", id, "export"] as const,
   job: (id: string) => ["job", id] as const,
 };
@@ -209,6 +210,16 @@ export function useEvidence(digest: Digest | null | undefined, opts: QueryOpts =
 }
 
 /** One regression replay; polls until it has an outcome. */
+/** The model-proposals sidecar of a live-model replay (immutable, content-addressed). */
+export function useModelProposals(digest: Digest | null | undefined, opts: QueryOpts = {}) {
+  return useQuery({
+    queryKey: qk.modelProposals(digest ?? ""),
+    queryFn: () => api.getModelProposals(digest as Digest),
+    enabled: (opts.enabled ?? true) && !!digest,
+    staleTime: Infinity,
+  });
+}
+
 export function useRegression(id: string | null | undefined, opts: QueryOpts = {}) {
   return useQuery({
     queryKey: qk.regression(id ?? ""),

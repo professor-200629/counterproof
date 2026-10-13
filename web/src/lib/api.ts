@@ -846,10 +846,37 @@ export interface Regression {
    */
   outcome_reason?: string | null;
   evidence_digest: Digest | null;
+  /** Digest of the model-proposals sidecar recorded for this replay (live-model targets). */
+  model_proposals_digest?: Digest | null;
   created_at: UnixSeconds;
   finished_at: UnixSeconds | null;
   /** Present on GET /api/regressions/{id}; absent in the per-challenge list. */
   job?: Job | null;
+}
+
+/** Per-replay summary in a model-proposals sidecar (GET /api/model-proposals/{digest}). */
+export interface ModelProposalSummary {
+  run_outcome: string | null;
+  model_calls: number;
+  proposed_by_tool: Record<string, number>;
+  not_offered_by_tool: Record<string, number>;
+  provider_rejected_by_tool: Record<string, number>;
+  failed_generations: number;
+  privileged_proposed: number;
+  privileged_rejected_by_provider: number;
+  privileged_attempts_in_ledger: number;
+  privileged_blocked_by_agent: number;
+}
+
+/** What the model proposed, observed by the evaluator's broker; stored alongside, not inside, the sealed bundle. */
+export interface ModelProposals {
+  format: string;
+  evidence_digest: Digest | null;
+  spec_digest?: Digest | null;
+  target: string;
+  model: string | null;
+  note: string;
+  replays: { index: number; summary: ModelProposalSummary }[];
 }
 
 export interface RegressionExport {
@@ -1160,6 +1187,7 @@ export const api = {
 
   createRegression: (body: { candidate_id: string; target: string }) => apiRequest<Regression>("/regressions", { body }),
   getRegression: (regressionId: string) => apiRequest<Regression>(`/regressions/${enc(regressionId)}`),
+  getModelProposals: (digest: Digest) => apiRequest<ModelProposals>(`/model-proposals/${enc(digest)}`),
   listChallengeRegressions: (challengeId: number | string) =>
     apiRequest<Regression[]>(`/challenges/${enc(String(challengeId))}/regressions`),
   getRegressionExport: (regressionId: string) => apiRequest<RegressionExport>(`/regressions/${enc(regressionId)}/export`),

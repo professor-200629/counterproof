@@ -10,6 +10,8 @@
  "evidence_digest": "sha256:d5fb123ece4bed016c0d2e2c3f3722f985c88b71f8fafd526107297fc7e105ef",
  "created_at": 1791737940,
  "finished_at": 1791737941,
+ "model_proposals_digest": null,
+ "outcome_reason": null,
  "job": {
   "id": "job_ceeedb96fbdf4143",
   "kind": "regression",

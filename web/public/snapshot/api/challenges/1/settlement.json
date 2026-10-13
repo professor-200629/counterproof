@@ -14,6 +14,7 @@
   "updated_at": 1791737927
  },
  "attestation": {
+  "id": "att_abb6d134a5e2f01d",
   "typed_data": {
    "domain": {
     "name": "CounterProof",
@@ -77,7 +78,11 @@
   "signature": "0xa0f8dd1c4e1bfa5b843bbecd2f830420926a2a6053ba834deb90af0d0315ed19574a3f10234f2d138d0548eaf0c53c1bca0574630c8638b1cf803c01e46550251b",
   "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
   "expiry": 1791741506,
-  "evaluation_id": "eval_244ea02221bd4012"
+  "evaluation_id": "eval_244ea02221bd4012",
+  "evidence_digest": null,
+  "verification": null,
+  "created_at": 1791737922,
+  "updated_at": null
  },
  "onchain": {
   "publisher": "0x27d338b0a15d73b7ae74d4bc70c134f67a0275fa",
@@ -89,5 +94,6 @@
   "spec_digest": "sha256:0b74eb43bf0042a10a42a25f482a0609dbfb0c26cb24c62b262ed89443521cb2",
   "settled_submission": "0x3769de06dc9a137a4eb721d5e6538861ca1085d1d72a7e3d95c2199172d65ee5"
  },
- "explorer_template": "https://testnet.monadscan.com/tx/{hash}"
+ "explorer_template": "https://testnet.monadscan.com/tx/{hash}",
+ "attestation_job": null
 }

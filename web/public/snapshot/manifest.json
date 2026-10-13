@@ -1,17 +1,18 @@
 {
  "format": "counterproof.snapshot/v1",
- "taken_at": 1791739811,
+ "taken_at": 1791865811,
  "network": "monad-testnet",
  "network_label": "Monad Testnet (10143)",
  "chain_id": 10143,
  "contract": "0xe37720f40bc214ce084595111b1ee4f4d454b5e4",
  "explorer_tx_url": "https://testnet.monadscan.com/tx/{hash}",
  "challenges_included": [
+  4,
   3,
   2,
   1
  ],
- "challenges_on_evaluator": 3,
- "files": 37,
+ "challenges_on_evaluator": 4,
+ "files": 49,
  "note": "Recorded responses from the CounterProof evaluator. Read-only: nothing on this site runs live."
 }

@@ -46,6 +46,7 @@ import { unclearRegressionText } from "./regression-reading";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { VersionColumn } from "./version-column";
+import { ModelProposalsSummary } from "@/components/evidence/model-proposals";
 
 export interface CompareInitial {
   candidate?: string;
@@ -379,6 +380,7 @@ function Comparison({ view, initial }: { view: ChallengeView; initial: CompareIn
               status={regression?.status ?? null}
               domain="regression"
               bundle={regression?.evidence_digest ? afterQ : null}
+              footer={<ModelProposalsSummary digest={regression?.model_proposals_digest} />}
               rule={rule}
               currency={currency}
               placeholder={
