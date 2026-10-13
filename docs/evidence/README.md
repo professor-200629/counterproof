@@ -9,6 +9,8 @@ hand-edited.
 | `regression-<ts>.json`, `test_regression_<ts>.py` | The exported regression test from that run (JSON and pytest) | Generated from the local run |
 | `testnet-e2e-<ts>.json`, `regression-testnet-<ts>.json` | `scripts/e2e_testnet.py --with-refund`, same flow plus ERC-8004 identity and feedback, with Monadscan links | **Monad Testnet 10143** |
 | `testnet-llm-<ts>.json` | `scripts/e2e_testnet_llm.py`: funded challenge against the live-model agent, live search, k-of-n replay, settlement, ERC-8004 feedback | **Monad Testnet 10143**; live Groq model |
+| `fork-rehearsal-llm-<ts>.json` | `scripts/e2e_testnet_llm.py --recorded` with `COUNTERPROOF_FORK_REHEARSAL=1`: the live-model path including the **signer's own k-of-n verification** (signer_replays, signer_evidence vs worker_evidence), settlement, ERC-8004 feedback on the forked official registries, withdraw | **Local anvil fork of Monad testnet - no transaction reached Monad testnet**; live Groq model |
+| `repair-llm-0.2.0-<ts>*.json`, `test_regression_llm_0_2_0_<ts>.py` | `scripts/live_repair_replay.py`: the recorded challenge #3 attack against the repaired `llm-purchasing-agent@0.2.0` (live replays), an ordinary purchase check, the exported regression | Local evaluator on a copy of the testnet data; live Groq model; no chain transaction |
 | `independent-llm-<ts>.json` | `scripts/evaluate_independent.py`: the live-model agent under the three strategies, all outcomes including "no violation found" | Off-chain challenge; live Groq model |
 
 How to read a result:
