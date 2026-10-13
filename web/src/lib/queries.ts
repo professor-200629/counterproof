@@ -5,6 +5,7 @@
  * polls or refetches: the data is a recording and cannot change.
  */
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import {
   ApiError,
   api,
@@ -16,7 +17,7 @@ import {
   type SpecRequest,
 } from "./api";
 import { SNAPSHOT_MODE } from "./snapshot";
-import { isChallengeActive, isEvaluationActive, isRegressionActive, isRunActive } from "./status";
+import { isChallengeActive, isEvaluationActive, isJobActive, isRegressionActive, isRunActive } from "./status";
 
 export const POLL_MS = 1500;
 
@@ -39,6 +40,7 @@ export const qk = {
   evaluation: (id: string) => ["evaluation", id] as const,
   evidence: (digest: string) => ["evidence", digest] as const,
   regression: (id: string) => ["regression", id] as const,
+  modelProposals: (digest: string) => ["model-proposals", digest] as const,
   regressionExport: (id: string) => ["regression", id, "export"] as const,
   job: (id: string) => ["job", id] as const,
 };
@@ -179,12 +181,17 @@ export function useChallenge(id: number | string | null | undefined, opts: Query
   });
 }
 
+/**
+ * Settlement state. Polls while `poll` is set, and while a request to the evaluator's signer
+ * is queued or running (the signer replays the candidate itself before it signs - minutes for
+ * a live model).
+ */
 export function useSettlement(id: number | string | null | undefined, opts: QueryOpts & { poll?: boolean } = {}) {
   return useQuery({
     queryKey: qk.settlement(id ?? ""),
     queryFn: () => api.getSettlement(id as number | string),
     enabled: (opts.enabled ?? true) && id !== null && id !== undefined && id !== "",
-    refetchInterval: pollIf(opts.poll),
+    refetchInterval: pollWhile((d) => !!opts.poll || isJobActive(d?.attestation_job)),
   });
 }
 
@@ -224,13 +231,13 @@ export function useCandidate(id: string | null | undefined, opts: QueryOpts = {}
   });
 }
 
-/** One evaluation; polls while queued / replaying. */
+/** One evaluation; polls while queued / replaying, or while its attestation request is pending. */
 export function useEvaluation(id: string | null | undefined, opts: QueryOpts = {}) {
   return useQuery({
     queryKey: qk.evaluation(id ?? ""),
     queryFn: () => api.getEvaluation(id as string),
     enabled: (opts.enabled ?? true) && !!id,
-    refetchInterval: pollWhile((d) => !!d && isEvaluationActive(d.status)),
+    refetchInterval: pollWhile((d) => !!d && (isEvaluationActive(d.status) || isJobActive(d.attestation_job))),
   });
 }
 
@@ -245,6 +252,16 @@ export function useEvidence(digest: Digest | null | undefined, opts: QueryOpts =
 }
 
 /** One regression replay; polls until it has an outcome. */
+/** The model-proposals sidecar of a live-model replay (immutable, content-addressed). */
+export function useModelProposals(digest: Digest | null | undefined, opts: QueryOpts = {}) {
+  return useQuery({
+    queryKey: qk.modelProposals(digest ?? ""),
+    queryFn: () => api.getModelProposals(digest as Digest),
+    enabled: (opts.enabled ?? true) && !!digest,
+    staleTime: Infinity,
+  });
+}
+
 export function useRegression(id: string | null | undefined, opts: QueryOpts = {}) {
   return useQuery({
     queryKey: qk.regression(id ?? ""),
@@ -349,7 +366,12 @@ export function useRetryEvaluation(challengeId: number | string) {
   });
 }
 
-/** Ask the evaluator's signer for an attestation (funded challenges only). */
+/**
+ * Ask the evaluator's signer for an attestation, or renew an expired one (funded challenges
+ * only). The response is the attestation (200) or the queued request (202, `isAttestQueued`):
+ * the signer first replays the committed candidate itself, and the settlement / evaluation
+ * queries poll until the request finishes.
+ */
 export function useAttest(challengeId: number | string) {
   const qc = useQueryClient();
   const invalidate = useInvalidateChallenge(challengeId);
@@ -361,6 +383,28 @@ export function useAttest(challengeId: number | string) {
       invalidate();
     },
   });
+}
+
+/**
+ * When a request to the evaluator's signer finishes (signed, renewed, refused or failed),
+ * refresh the challenge (its attestation row and activity) and the evaluation once.
+ */
+export function useRefreshWhenAttestationJobEnds(
+  challengeId: number | string,
+  job: { id: string; status: string; params?: JsonObject } | null | undefined,
+) {
+  const qc = useQueryClient();
+  const seen = useRef<string | null>(null);
+  const key = job ? `${job.id}:${job.status}` : null;
+  const active = isJobActive(job);
+  const evaluationId = typeof job?.params?.evaluation_id === "string" ? job.params.evaluation_id : null;
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = key;
+    if (SNAPSHOT_MODE || !before || before === key || active) return;
+    void qc.invalidateQueries({ queryKey: qk.challenge(challengeId) });
+    if (evaluationId) void qc.invalidateQueries({ queryKey: qk.evaluation(evaluationId) });
+  }, [key, active, challengeId, evaluationId, qc]);
 }
 
 /** Replay a verified candidate's action sequence against another target version. */

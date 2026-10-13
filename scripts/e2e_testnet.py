@@ -85,10 +85,14 @@ def main() -> int:
         ev = s.wait(f"/api/evaluations/{ev['id']}", lambda v: v["status"] not in ("queued", "replaying"), what="evaluation")
         base.step("replay", outcome=ev["outcome"], evidence=ev["evidence_digest"])
         assert ev["outcome"] == "verified_violation"
-        sett = s.wait(f"/api/challenges/{cid}/settlement", lambda v: v["attestation"] is not None, timeout=180, what="attestation")
-        att = sett["attestation"]
-        base.step("attest", signer=att["signer"], expiry=att["expiry"])
+        # The signer replays the committed candidate itself before it signs; it signs the digest
+        # of its OWN verification bundle, which is the evidence the ERC-8004 report must carry.
+        att = s.wait_attestation(cid, timeout=300)
+        signed_evidence = att["evidence_digest"]
+        base.step("attest", signer=att["signer"], expiry=att["expiry"], signer_evidence=signed_evidence,
+                  worker_evidence=ev["evidence_digest"])
         m = att["typed_data"]["message"]
+        assert signed_evidence and m["evidenceDigest"] == "0x" + signed_evidence[7:], (m["evidenceDigest"], signed_evidence)
         tup = (int(m["challengeId"]), bytes.fromhex(m["specDigest"][2:]), bytes.fromhex(m["submissionId"][2:]),
                bytes.fromhex(m["candidateDigest"][2:]), bytes.fromhex(m["evidenceDigest"][2:]),
                w3.to_checksum_address(m["challenger"]), w3.to_checksum_address(m["recipient"]), int(m["verdict"]), int(m["expiry"]))
@@ -102,7 +106,7 @@ def main() -> int:
         # ERC-8004: the reporter re-checks the settlement on chain, then posts reputation feedback
         # to the official ReputationRegistry for the agent that declares this exact artifact digest.
         fb = testnet.report_violation(w3, bounties=c, onchain_id=int(funded["onchain_id"]), settle_tx=settle_tx,
-                                      spec=sp, spec_digest=spec["digest"], evidence=s.get(f"/api/evidence/{ev['evidence_digest']}"),
+                                      spec=sp, spec_digest=spec["digest"], evidence=s.get(f"/api/evidence/{signed_evidence}"),
                                       endpoint=f"{os.environ.get('COUNTERPROOF_PUBLIC_URL', 'https://counterproof.vercel.app')}/challenges/{cid}")
         base.step("erc8004 feedback", agent_id=fb["agent_id"], reporter=fb["reporter"], tag=f"{fb['tag1']}/{fb['tag2']}",
                   feedback_index=fb["feedback_index"], tx=fb["tx"], explorer=fb["explorer"])

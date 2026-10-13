@@ -9,9 +9,11 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { MatchMark } from "@/components/ui/match-mark";
 import { Countdown, DateTime } from "@/components/ui/time";
 import { TrustStatement } from "@/components/truth";
-import type { ChallengeView, Evaluation, OnchainChallenge, SettlementAttestation } from "@/lib/api";
+import { textLinkClasses } from "@/components/ui/text-link";
+import { evidenceDownloadUrl, evidenceFilename, type ChallengeView, type Evaluation, type OnchainChallenge, type SettlementAttestation } from "@/lib/api";
 import { digestMatchesBytes32, txNetworkPhrase } from "@/lib/chain";
 import { sameHex } from "@/lib/format";
+import { attestedEvidence, verificationSummary } from "./derive";
 import { useRecoveredSigner } from "./use-recovered-signer";
 
 export interface AttestationDetailsProps {
@@ -32,6 +34,11 @@ export function AttestationDetails({ attestation, view, evaluation, onchain, con
   const recovered = useRecoveredSigner(attestation);
   const candidateDigest =
     evaluation?.candidate_digest ?? view.candidates.find((c) => c.id === evaluation?.candidate_id)?.digest ?? null;
+  // Current attestations bind the signer's OWN verification bundle; older ones (the recorded
+  // testnet run) bound the worker's evaluation bundle, and are still compared with that.
+  const evidence = attestedEvidence(attestation, evaluation?.evidence_digest);
+  const verification = attestation.verification ?? null;
+  const replays = verificationSummary(verification);
 
   const rows: { name: string; type: string; value: ReactNode; check: ReactNode }[] = [
     {
@@ -67,7 +74,26 @@ export function AttestationDetails({ attestation, view, evaluation, onchain, con
       name: "evidenceDigest",
       type: "bytes32",
       value: <Digest value={m.evidenceDigest} label="attested evidence digest" />,
-      check: <MatchMark ok={digestMatchesBytes32(m.evidenceDigest, evaluation?.evidence_digest)} subject="the evidence bundle" />,
+      check:
+        evidence.source === "signer" ? (
+          <span className="space-y-0.5">
+            <MatchMark
+              ok={digestMatchesBytes32(m.evidenceDigest, evidence.digest)}
+              subject={
+                <>
+                  the signer&apos;s own verification bundle (
+                  <a href={evidenceDownloadUrl(evidence.digest as string)} className={textLinkClasses} download={evidenceFilename(evidence.digest as string)}>
+                    JSON
+                  </a>
+                  )
+                </>
+              }
+            />
+            <span className="block text-xs text-muted">Not the worker&apos;s evaluation: the signer signs only the bundle it produced itself.</span>
+          </span>
+        ) : (
+          <MatchMark ok={digestMatchesBytes32(m.evidenceDigest, evidence.digest)} subject="the evidence bundle" />
+        ),
     },
     {
       name: "challenger",
@@ -149,6 +175,40 @@ export function AttestationDetails({ attestation, view, evaluation, onchain, con
             </span>
           )}
         </dd>
+
+        {verification ? (
+          <>
+            <dt className="text-muted">Signer&apos;s own replay</dt>
+            <dd className="min-w-0 space-y-1 text-sm">
+              <span className="block">
+                {replays ? `${replays.charAt(0).toUpperCase()}${replays.slice(1)}.` : verification.reason}{" "}
+                <span className="text-xs text-muted">
+                  The signer replayed the committed candidate itself before signing; the worker&apos;s evaluation
+                  {verification.worker_evidence_digest ? (
+                    <>
+                      {" "}
+                      (<Digest value={verification.worker_evidence_digest} label="worker evidence digest" />)
+                    </>
+                  ) : null}{" "}
+                  is kept only as a reference.
+                </span>
+              </span>
+              {verification.evidence_digest ? (
+                <span className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted">Signer&apos;s bundle</span>
+                  <Digest value={verification.evidence_digest} label="signer evidence digest" />
+                  <a
+                    href={evidenceDownloadUrl(verification.evidence_digest)}
+                    download={evidenceFilename(verification.evidence_digest)}
+                    className={textLinkClasses}
+                  >
+                    Download JSON
+                  </a>
+                </span>
+              ) : null}
+            </dd>
+          </>
+        ) : null}
 
         <dt className="text-muted">Expiry</dt>
         <dd className="min-w-0 text-sm">

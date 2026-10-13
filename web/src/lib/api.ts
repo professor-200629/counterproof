@@ -480,7 +480,7 @@ export interface RunSummary {
 
 export interface Job {
   id: string;
-  kind: "search" | "evaluation" | "regression" | string;
+  kind: "search" | "evaluation" | "regression" | "attestation" | string;
   status: JobStatus;
   params: JsonObject;
   result: JsonObject | null;
@@ -571,6 +571,33 @@ export function finishedSummary(e: Pick<Evaluation, "summary"> | null | undefine
   return s && "outcome" in s ? s : null;
 }
 
+/**
+ * The evaluator signer's OWN verification of a submission: before it signs, the signer
+ * replays the committed candidate itself (the spec's k-of-n policy, fresh isolated
+ * children, its own model broker) and signs the digest of its own bundle. The worker's
+ * evaluation is recorded only as provenance.
+ */
+export interface SignerVerification {
+  by?: string;
+  status: "verifying" | "verified" | "rejected" | "failed" | string;
+  outcome: EvaluationOutcome | null;
+  reason: string | null;
+  mode: "deterministic" | "stochastic" | string | null;
+  /** Fresh replays the signer ran (n) and how many violated the claimed rule. */
+  replays: number | null;
+  replays_done?: number | null;
+  violated: number | null;
+  /** k: violations the spec requires. */
+  required: number | null;
+  /** The signer's own evidence bundle (the digest it signs). */
+  evidence_digest: Digest | null;
+  attempt?: number | null;
+  started_at?: UnixSeconds | null;
+  finished_at?: UnixSeconds | null;
+  worker_evaluation_id?: string | null;
+  worker_evidence_digest?: Digest | null;
+}
+
 export interface AttestationRow {
   id: string;
   challenge_id: number;
@@ -581,6 +608,31 @@ export interface AttestationRow {
   signer: string;
   expiry: UnixSeconds;
   created_at: UnixSeconds;
+  /**
+   * The signer's own verification bundle - the evidence digest it signed. Absent (null) on
+   * attestations signed before the signer verified submissions itself (those signed the
+   * worker's evaluation digest, e.g. the recorded Monad testnet run).
+   */
+  evidence_digest?: Digest | null;
+  verification?: SignerVerification | null;
+  /** Set when the attestation was renewed (same message, later expiry). */
+  updated_at?: UnixSeconds | null;
+}
+
+/** POST /api/evaluations/{id}/attest when no usable attestation exists yet (HTTP 202). */
+export interface AttestQueued {
+  status: "queued" | "verifying";
+  job_id: string;
+  evaluation_id: string;
+  job: Job | null;
+  /** The expired attestation being renewed, if any. */
+  attestation: AttestationRow | null;
+}
+
+export type AttestResponse = AttestationRow | AttestQueued;
+
+export function isAttestQueued(r: AttestResponse | null | undefined): r is AttestQueued {
+  return !!r && "job_id" in r && (r.status === "queued" || r.status === "verifying");
 }
 
 export interface Evaluation {
@@ -607,6 +659,8 @@ export interface Evaluation {
   /** Only on GET /api/evaluations/{id} and submit responses. */
   job?: Job | null;
   attestation?: AttestationRow | null;
+  /** Only on GET /api/evaluations/{id}: the latest request to the evaluator's signer. */
+  attestation_job?: Job | null;
   /** Set when the same candidate was already submitted (no second payable finding). */
   duplicate?: boolean;
 }
@@ -725,6 +779,12 @@ export interface SettlementAttestation {
   signer: string;
   expiry: UnixSeconds;
   evaluation_id: string;
+  id?: string;
+  /** The signer's own verification bundle (see AttestationRow.evidence_digest); null on older attestations. */
+  evidence_digest?: Digest | null;
+  verification?: SignerVerification | null;
+  created_at?: UnixSeconds | null;
+  updated_at?: UnixSeconds | null;
 }
 
 /** The contract's view of a challenge (read from chain by the backend). */
@@ -746,6 +806,11 @@ export interface Settlement {
   onchain_error?: string;
   /** Explorer template with `{hash}`, null for anvil / off-chain. */
   explorer_template: string | null;
+  /**
+   * The latest request to the evaluator's signer for this challenge (a worker job that polls
+   * it while the signer replays the candidate itself). Absent in older recordings.
+   */
+  attestation_job?: Job | null;
 }
 
 export interface ChainTransaction {
@@ -792,10 +857,37 @@ export interface Regression {
    */
   outcome_reason?: string | null;
   evidence_digest: Digest | null;
+  /** Digest of the model-proposals sidecar recorded for this replay (live-model targets). */
+  model_proposals_digest?: Digest | null;
   created_at: UnixSeconds;
   finished_at: UnixSeconds | null;
   /** Present on GET /api/regressions/{id}; absent in the per-challenge list. */
   job?: Job | null;
+}
+
+/** Per-replay summary in a model-proposals sidecar (GET /api/model-proposals/{digest}). */
+export interface ModelProposalSummary {
+  run_outcome: string | null;
+  model_calls: number;
+  proposed_by_tool: Record<string, number>;
+  not_offered_by_tool: Record<string, number>;
+  provider_rejected_by_tool: Record<string, number>;
+  failed_generations: number;
+  privileged_proposed: number;
+  privileged_rejected_by_provider: number;
+  privileged_attempts_in_ledger: number;
+  privileged_blocked_by_agent: number;
+}
+
+/** What the model proposed, observed by the evaluator's broker; stored alongside, not inside, the sealed bundle. */
+export interface ModelProposals {
+  format: string;
+  evidence_digest: Digest | null;
+  spec_digest?: Digest | null;
+  target: string;
+  model: string | null;
+  note: string;
+  replays: { index: number; summary: ModelProposalSummary }[];
 }
 
 export interface RegressionExport {
@@ -1230,14 +1322,19 @@ export const api = {
   /** Re-queue an evaluation whose outcome is runner_failure (409 for any other verdict - those are final). */
   retryEvaluation: (evaluationId: string) =>
     apiRequest<Evaluation>(`/evaluations/${enc(evaluationId)}/retry`, { method: "POST" }),
-  /** Ask the evaluator's signer for an EIP-712 attestation (funded challenges only). */
-  attest: (evaluationId: string) => apiRequest<AttestationRow>(`/evaluations/${enc(evaluationId)}/attest`, { method: "POST" }),
+  /**
+   * Ask the evaluator's signer for an EIP-712 attestation, or renew an expired one (funded
+   * challenges only). 200: a usable attestation. 202: queued - the signer first replays the
+   * committed candidate itself (minutes for a live model); poll the settlement.
+   */
+  attest: (evaluationId: string) => apiRequest<AttestResponse>(`/evaluations/${enc(evaluationId)}/attest`, { method: "POST" }),
 
   getEvidence: (digest: Digest) => apiRequest<EvidenceBundle>(`/evidence/${enc(digest)}`),
   getJob: (jobId: string) => apiRequest<Job>(`/jobs/${enc(jobId)}`),
 
   createRegression: (body: { candidate_id: string; target: string }) => apiRequest<Regression>("/regressions", { body }),
   getRegression: (regressionId: string) => apiRequest<Regression>(`/regressions/${enc(regressionId)}`),
+  getModelProposals: (digest: Digest) => apiRequest<ModelProposals>(`/model-proposals/${enc(digest)}`),
   listChallengeRegressions: (challengeId: number | string) =>
     apiRequest<Regression[]>(`/challenges/${enc(String(challengeId))}/regressions`),
   getRegressionExport: (regressionId: string) => apiRequest<RegressionExport>(`/regressions/${enc(regressionId)}/export`),

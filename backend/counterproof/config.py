@@ -20,7 +20,9 @@ API_AUTH_SECRETS = {"COUNTERPROOF_OPERATOR_TOKEN", "COUNTERPROOF_JUDGE_PASSCODE"
 # Which secrets each process may load from .env. Everything else that looks secret is
 # skipped, so e.g. the API and worker never hold the evaluator's signing key.
 ROLE_SECRETS = {
-    "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"},
+    # The signer replays every submission itself before it signs, including live-model ones,
+    # so its model broker needs the provider keys. Target children never receive them.
+    "signer": {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "api": {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS | API_AUTH_SECRETS,
     "worker": {"COUNTERPROOF_SIGNER_TOKEN"} | PROVIDER_KEYS,
     "script": None,  # deployment/key scripts may read everything

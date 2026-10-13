@@ -1,32 +1,36 @@
-# Pitch (≤ 2:00)
+# Pitch
 
-**Problem (0:00–0:25).** AI agents are starting to spend money. Their builders make
-promises — "it never exceeds the budget", "it never pays twice" — and test them
-themselves. When a promise breaks, there is no shared way to prove it, reproduce it, or
-reward the person who found it.
+**Length:** at most 2:00. That limit was read from the hackathon portal on 2026-10-06 and could
+not be re-verified without sign-in, so check it before recording.
 
-**Product (0:25–1:05).** CounterProof turns a promise into a funded, executable challenge
-on Monad. The developer approves exact rules and funds a reward. Challengers search for
-counterexamples. Our evaluator replays every candidate in a fresh isolated environment, a
-deterministic checker reads the evaluator's own ledger — never the agent's word — and a
-separate signer attests the result. The contract pays only the recipient the challenger
-bound on chain when committing to that exact candidate — whoever relays the transaction.
-Then the counterexample becomes a regression test for the fixed version, and a verified
-result is written to the agent's ERC-8004 reputation on Monad, so anyone choosing an agent
-can see it.
+**Problem (0:00-0:20).** AI agents are starting to spend money. Their builders make promises:
+"it never exceeds the budget", "it never changes its own permissions". The teams that wrote
+those agents are the ones testing those promises. When a promise breaks, nobody can prove it,
+reproduce it or get paid for finding it.
 
-**Honesty (1:05–1:25).** We say exactly what a result means. "No violation found" is not
-proof of safety. Our evaluator is a declared trusted party: a signed attestation, not a
-zero-knowledge proof. Our demo failure comes from a reference agent with planted defects,
-and we label it so. Then we pointed it at a live-model agent with no planted defects: injected
-shop text talked it into trying to raise its own budget, in 3 of 3 independent replays. The
-market refused the change, and the evidence is public.
+**What we built (0:20-0:55).** CounterProof turns one promise into a funded challenge on Monad.
+The developer approves an exact rule, and its hash is escrowed with a reward. A challenger
+commits a counterexample on chain before revealing it. Our evaluator replays it in fresh,
+isolated runs. A deterministic checker reads the evaluator's own ledger, never the agent's
+word. Before it signs, a separate signer re-runs the agreed number of replays itself. The
+contract pays only the recipient bound at commit, whoever relays the transaction. The result
+becomes ERC-8004 reputation for that exact code version and a regression test for the fix.
 
-**Why Monad (1:25–1:40).** Fund, commit, settle and withdraw are small, frequent
-transactions; with sub-second blocks the payout confirms while the evidence is still on
-screen.
+**Proof it works (0:55-1:25).** On Monad testnet, injected shop text made a live-model purchasing
+agent, running gpt-oss-120b, try to give itself a 1,000,000 budget. That happened in 3 of 3
+fresh replays. The reward was settled and withdrawn, and the result is recorded in ERC-8004.
+We then shipped a repaired version that enforces its tool permissions in code. The same attack
+was replayed against it 3 times: the rule held, and an ordinary purchase still went through.
+The exported regression test fails on the old version and passes on the new one. All of this is
+on the public site, with transaction links, and a script re-checks it.
 
-**Ask (1:40–2:00).** Validators check what an agent did. CounterProof pays people to break
-what it promised, and turns every break into a test and a reputation record. Next: more agent
-adapters, multiple independent evaluators, and public challenges against open-source agents.
-CounterProof: put AI promises to the test.
+**Why Monad (1:25-1:40).** The pieces that need neutral ground run on chain: the escrow, the
+commitment, the payout bound to the challenger, and reputation any agent marketplace can read.
+Measured on testnet: blocks about 0.3 s apart, and about 0.014 testnet MON of gas to settle.
+
+**What we don't claim (1:40-1:50).** The evaluator is a declared trusted party: its signature is
+an attestation, not a proof. A bounded test is not general safety. So far every agent we tested
+was written by our team; an external agent is next.
+
+**Ask (1:50-2:00).** Put your agent's promises up as challenges, or bring us the agent that should
+be tested next. CounterProof: put AI promises to the test.

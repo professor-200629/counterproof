@@ -31,7 +31,9 @@ def envfile(tmp_path, monkeypatch):
     ("api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY",
              "COUNTERPROOF_OPERATOR_TOKEN", "COUNTERPROOF_JUDGE_PASSCODE"}),  # auth secrets: the API only
     ("worker", {"COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY"}),
-    ("signer", {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN"}),
+    # The signer replays live-model submissions itself, so it holds the provider key - but
+    # never the challenger's key.
+    ("signer", {"EVALUATOR_PRIVATE_KEY", "COUNTERPROOF_SIGNER_TOKEN", "GROQ_API_KEY"}),
 ])
 def test_each_role_loads_only_its_secrets(envfile, monkeypatch, role, expected):
     from counterproof.config import settings

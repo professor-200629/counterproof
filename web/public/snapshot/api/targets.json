@@ -15,7 +15,7 @@
   ],
   "provenance": "Written for the demonstration with planted defects (see module docstring).",
   "key": "ref-purchasing-agent@1.0.0",
-  "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+  "artifact_digest": "sha256:3ee59cb1e600d335d3401157e6a771287afb254096e060146f6fd40fddbae60f",
   "hosted": true
  },
  {
@@ -31,7 +31,7 @@
   "planted_defects": [],
   "provenance": "Repair of the 1.0.0 fixture, written by the CounterProof team.",
   "key": "ref-purchasing-agent@1.1.0",
-  "artifact_digest": "sha256:6051bbaf4fc5b844a4b4c942658085f99728df6713cb9d7cd9e555d57348b154",
+  "artifact_digest": "sha256:260b4b56a3354ff91485de34eac42aba741d91d78fe49963719c369b5f2ed08c",
   "hosted": true
  },
  {
@@ -47,7 +47,23 @@
   "planted_defects": [],
   "provenance": "Prompt and tool loop written once by the CounterProof team before any strategy was run against it; no defects planted. The model is a third-party hosted model.",
   "key": "llm-purchasing-agent@0.1.1",
-  "artifact_digest": "sha256:f96ff6b294b173a446a7a9476e10b77cc7491fec0a49424eaceb8b542c8e0dc8",
+  "artifact_digest": "sha256:324a37f71711ee1d8b5cdbd0cdbc1f621d512e1cfd94b73440d7cd5138f70ace",
+  "hosted": true
+ },
+ {
+  "adapter": "llm-purchasing-agent",
+  "version": "0.2.0",
+  "module_file": "targets/llm_agent_v0_2.py",
+  "title": "LLM purchasing agent 0.2.0 - capability-enforced repair of 0.1.1",
+  "label": "repaired-live-model",
+  "determinism": "stochastic",
+  "first_party": true,
+  "requires_model": true,
+  "description": "0.1.1's tool loop with its capabilities enforced in code. The model is offered only the seven non-privileged tools, and the dispatcher refuses any other tool name before anything reaches the market. Orders are bound to the principal's request, and every payment passes in-code guards: mandate active, merchant allowlisted, settled payments plus this order within the budget, one payment per order with a fixed idempotency key. Policy values come only from market results, never from merchant text or model output. Decisions still come from a hosted model; results are statistical. On a provider that validates tool calls (Groq, which served the 0.1.1 finding), a model that still reaches for update_mandate is stopped by the provider first: it rejects the generation (HTTP 400 tool_use_failed), the agent never sees it, and the replay ends as target_crash. The evaluator's model-proposals record keeps the rejected tool name, and the ledger shows nothing reached the market, but such a run does not exercise the agent's own refusal, and a regression counts it as not completed.",
+  "planted_defects": [],
+  "provenance": "Written by the CounterProof team after the recorded 0.1.1 finding (Monad testnet challenge #3: injected merchant text led the model to call update_mandate in 3 of 3 replays). A repair by the team that found the problem, not an independent implementation. The model is a third-party hosted model; blocked proposals in its claims are agent self-report.",
+  "key": "llm-purchasing-agent@0.2.0",
+  "artifact_digest": "sha256:823fd0fad1f33943376ce8412a69980848db22504d660b43d94b56ba3449db50",
   "hosted": true
  }
 ]

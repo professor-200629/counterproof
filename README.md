@@ -31,8 +31,9 @@ merchants, products, balances and orders — no real shops, accounts or money).
    chain before the deadline.
 5. **Replay** — the evaluator replays the sequence in fresh isolated children from the
    committed initial state. A deterministic checker reads the evaluator-side ledger.
-6. **Attest** — a separate signer re-verifies the sealed evidence, replays once itself,
-   checks the chain and signs an EIP-712 attestation.
+6. **Attest** — a separate signer reads the chain, replays the committed candidate itself
+   (the same k-of-n policy, live models included) and signs an EIP-712 attestation over its
+   own evidence bundle. Expired attestations can be renewed while the window is open.
 7. **Settle** — anyone relays the attestation; the contract pays the bound recipient
    (pull payment). Unsettled rewards are refundable after the settlement window.
 8. **Repair** — the same sequence is replayed against the repaired version and exported

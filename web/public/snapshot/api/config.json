@@ -11,7 +11,7 @@
   "reachable": true,
   "explorer_tx_url": "https://testnet.monadscan.com/tx/{hash}",
   "rpc_chain_id": 10143,
-  "block": 70171323,
+  "block": 70587728,
   "chain_id_matches": true,
   "contract_has_code": true
  },

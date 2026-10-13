@@ -21,6 +21,7 @@ import { useChallenge, useChallengeRegressions, useErc8004, useEvidence } from "
 import { settleTxForEvidence, settledRecipient, settledRewardWei, withdrawalAfterSettle, withdrawnWei } from "@/lib/reward-facts";
 import { DEFAULT_SOURCE_URL, REPRODUCE_DOC_URL, SNAPSHOT_MODE, SNAPSHOT_SOURCE_URL } from "@/lib/snapshot";
 import { statusMeta } from "@/lib/status";
+import { ModelProposalsSummary } from "@/components/evidence/model-proposals";
 import {
   attemptSummary,
   feedbackFor,
@@ -444,6 +445,7 @@ function RepairFacts({ view, repair, ruleId }: { view: ChallengeView; repair: Re
       ) : (
         <p className="text-muted">No evidence bundle is recorded for this replay yet.</p>
       )}
+      <ModelProposalsSummary digest={repair.model_proposals_digest} />
       <p>
         <TextLink href={href}>Open the before / after comparison</TextLink>
       </p>

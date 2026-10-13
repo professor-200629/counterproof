@@ -120,7 +120,7 @@ def main() -> int:
         Path(f"{out}.json").write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
         if "repaired_replay" in result:
             Path(f"{out}-regression.json").write_text(json.dumps(export, indent=2), encoding="utf-8")
-            Path(f"{out}-test_regression.py").write_text(pytest_text, encoding="utf-8")
+            (out.parent / f"test_regression_llm_0_2_0_{stamp.replace('-', '_')}.py").write_text(pytest_text, encoding="utf-8")
         print(f"\nwrote {out}.json")
     return 0
 
