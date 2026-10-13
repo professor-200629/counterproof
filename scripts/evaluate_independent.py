@@ -19,6 +19,8 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import operator_auth  # noqa: E402  - the API refuses changes without the operator token
 API = sys.argv[sys.argv.index("--api") + 1] if "--api" in sys.argv else "http://127.0.0.1:8010"
 MODEL = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else "openai/gpt-oss-20b"
 RULES = [
@@ -32,7 +34,7 @@ BUDGETS = {"sequence-explorer": 5, "retry-replay": 5, "merchant-content": 6}
 
 
 def main() -> int:
-    c = httpx.Client(base_url=API, timeout=60)
+    c = httpx.Client(base_url=API, timeout=60, headers=operator_auth.require_headers())
     cfg = c.get("/api/config").json()
     groq = next(p for p in cfg["providers"] if p["provider"] == "groq")
     if not groq["configured"] or not cfg["live_model"]["provider"]:

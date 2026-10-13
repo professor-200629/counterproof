@@ -116,10 +116,17 @@ def _receipt(hash_: str, timeout: int = 60):
 
 def _track(conn: sqlite3.Connection, hash_: str, kind: str, status: str, challenge_id: int | None, frm: str | None,
            detail: dict | None = None, block: int | None = None, error: str | None = None) -> None:
+    """Record what a receipt says about a transaction. The receipt is authoritative over a row
+    the browser filed (record_failed_tx: kind, challenge and sender are replaced too). A
+    confirmed row is never rewritten for another challenge or kind - for example the same
+    hash offered again as another challenge's funding."""
     s = settings()
     conn.execute("INSERT INTO transactions(hash, chain_id, kind, status, challenge_id, from_addr, detail, block_number, error, created_at, updated_at) "
                  "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(chain_id, hash) DO UPDATE SET status=excluded.status, "
-                 "detail=excluded.detail, block_number=excluded.block_number, error=excluded.error, updated_at=excluded.updated_at",
+                 "kind=excluded.kind, challenge_id=excluded.challenge_id, from_addr=excluded.from_addr, "
+                 "detail=excluded.detail, block_number=excluded.block_number, error=excluded.error, updated_at=excluded.updated_at "
+                 "WHERE transactions.status != 'confirmed' OR (transactions.kind = excluded.kind "
+                 "AND transactions.challenge_id IS excluded.challenge_id)",
                  (hash_.lower(), s.chain_id, kind, status, challenge_id, frm, dumps(detail or {}), block, error, now(), now()))
 
 
@@ -131,11 +138,11 @@ def verify_funding(conn: sqlite3.Connection, challenge_row: dict, spec: dict, tx
     if rcpt.status != 1:
         _track(conn, tx_hash, "fund", "failed", cid, rcpt["from"].lower(), block=rcpt.blockNumber, error="reverted")
         raise ChainError("funding transaction reverted")
-    if rcpt.to is None or rcpt.to.lower() != settings().contract:
+    if rcpt.to is None or rcpt.to.lower() != (settings().contract or "").lower():
         raise ChainError("transaction was not sent to the CounterProof contract")
-    events = c.events.ChallengeCreated().process_receipt(rcpt)
+    events = _own_events(c.events.ChallengeCreated(), rcpt)
     if not events:
-        raise ChainError("no ChallengeCreated event in the transaction")
+        raise ChainError("no ChallengeCreated event from the CounterProof contract in the transaction")
     ev = events[0]["args"]
     problems = []
     if from_bytes32(ev["specDigest"]) != challenge_row["spec_digest"]:
@@ -153,6 +160,10 @@ def verify_funding(conn: sqlite3.Connection, challenge_row: dict, spec: dict, tx
         _track(conn, tx_hash, "fund", "confirmed", cid, rcpt["from"].lower(), {"problems": problems}, rcpt.blockNumber)
         raise ChainError("; ".join(problems))
     onchain_id = str(ev["challengeId"])
+    taken = conn.execute("SELECT id FROM challenges WHERE onchain_id=? AND id!=? AND chain_id IS ? AND contract IS ?",
+                         (onchain_id, cid, challenge_row.get("chain_id"), challenge_row.get("contract"))).fetchone()
+    if taken:
+        raise ChainError(f"on-chain challenge #{onchain_id} already funds challenge {taken['id']}")
     with tx(conn):
         _track(conn, tx_hash, "fund", "confirmed", cid, rcpt["from"].lower(),
                {"onchain_id": onchain_id, "reward_wei": str(ev["reward"])}, rcpt.blockNumber)
@@ -213,64 +224,195 @@ def commit_submission_as_challenger(conn: sqlite3.Connection, challenge_row: dic
 
 
 # --------------------------------------------------------------------------- attestation
-def request_attestation(conn: sqlite3.Connection, eid: str) -> dict:
+# The signer verifies every submission itself (a fresh k-of-n replay of the committed
+# candidate) before it signs, which takes minutes for a live model. The API therefore asks
+# through a worker job of kind "attestation" that polls the signer until it signs, refuses
+# or reports a failure; nothing here blocks on the replay.
+ATTESTATION_MARGIN = 300        # a stored attestation is reused only while it has more time left than this
+ATTESTATION_POLL_SECONDS = 10.0  # how often the attestation job asks the signer again
+ATTESTATION_POLL_LIMIT = 3600.0  # how long one attestation job keeps asking (a live replay takes minutes)
+ACTIVE_JOB = ("queued", "running", "cancelling")
+
+
+def attestation_usable(a: dict | None, at: int | None = None) -> bool:
+    return bool(a) and a["expiry"] - (now() if at is None else at) > ATTESTATION_MARGIN
+
+
+def attestation_job(conn: sqlite3.Connection, *, evaluation_id: str | None = None, challenge_id: int | None = None,
+                    active_only: bool = False) -> dict | None:
+    """The latest attestation job for an evaluation or a challenge."""
+    where, args = ["kind='attestation'"], []
+    if evaluation_id is not None:
+        where.append("json_extract(params, '$.evaluation_id')=?")
+        args.append(evaluation_id)
+    if challenge_id is not None:
+        where.append("json_extract(params, '$.challenge_id')=?")
+        args.append(challenge_id)
+    if active_only:
+        where.append(f"status IN ({','.join('?' * len(ACTIVE_JOB))})")
+        args += list(ACTIVE_JOB)
+    return row(conn.execute(f"SELECT * FROM jobs WHERE {' AND '.join(where)} ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                            args).fetchone())
+
+
+def enqueue_attestation(conn: sqlite3.Connection, eid: str, actor=None) -> dict:
+    """Queue an attestation job for this evaluation, or return the one already active. A
+    request from a caller (actor) is recorded against it and subject to the queue limits and
+    the operator stop; the worker's own request after a verified violation (actor None) is not."""
+    from . import jobs, services
+
+    e = services.get_evaluation(conn, eid)
+    with tx(conn):
+        active = attestation_job(conn, evaluation_id=eid, active_only=True)
+        if active:
+            return active
+        if actor is not None:
+            services._capacity(conn, actor, False)  # the worker only polls; the signer's model calls are guarded there
+        jid = jobs.enqueue(conn, "attestation", {"evaluation_id": eid, "challenge_id": e["challenge_id"]},
+                           owner=services._owner(actor))
+        log_activity(conn, "attestation.queued", "Attestation requested: the evaluator's signer will replay the committed "
+                     "candidate itself before it signs", e["challenge_id"], eid)
+    return jobs.get(conn, jid)
+
+
+def start_attestation(conn: sqlite3.Connection, eid: str, actor=None) -> tuple[int, dict]:
+    """POST /api/evaluations/{eid}/attest: (200, usable attestation) or (202, queued/verifying job)."""
     from . import services
 
     existing = row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
-    if existing:
-        return existing
+    if attestation_usable(existing):
+        return 200, existing
     e = services.get_evaluation(conn, eid)
     c = services.get_challenge(conn, e["challenge_id"])
     if c["status"] != "funded":
         raise ChainError(f"challenge is {c['status']}; nothing to attest")
+    summary = e["summary"] if isinstance(e["summary"], dict) else {}
+    if e["outcome"] != "verified_violation" or not summary.get("reward_eligible"):
+        raise ChainError("only a reward-eligible verified violation can be attested")
+    job = enqueue_attestation(conn, eid, actor=actor)
+    return 202, {"status": "verifying" if job["status"] == "running" else "queued", "job_id": job["id"],
+                 "evaluation_id": eid, "job": job, "attestation": existing}
+
+
+def _signer_post(body: dict) -> httpx.Response:
     s = settings()
     headers = {"Authorization": f"Bearer {s.signer_token}"} if s.signer_token else {}
-    try:
-        r = httpx.post(f"{s.signer_url}/attest", json={"evaluation_id": eid, "evidence_digest": e["evidence_digest"],
-                                                       "spec_digest": c["spec_digest"], "onchain_challenge_id": c["onchain_id"],
-                                                       "submission_id": e["submission_id"]},
-                       headers=headers, timeout=120)
-    except httpx.HTTPError as ex:
-        raise ChainError(f"signer unreachable at {s.signer_url}: {type(ex).__name__}") from ex
-    if r.status_code != 200:
-        raise ChainError(f"signer refused: {redact(r.text[:400])}")
-    a = r.json()
+    return httpx.post(f"{s.signer_url}/attest", json=body, headers=headers, timeout=120)
+
+
+def _store_attestation(conn: sqlite3.Connection, c: dict, e: dict, a: dict) -> tuple[dict, str]:
+    """Insert the signer's attestation, or update the challenge's row when it was renewed."""
+    verification = dumps(a["verification"]) if a.get("verification") else None
+    t = now()
     with tx(conn):
-        conn.execute("INSERT OR IGNORE INTO attestations(id, challenge_id, evaluation_id, submission_id, typed_data, signature, signer, expiry, created_at) "
-                     "VALUES (?,?,?,?,?,?,?,?,?)", (a["attestation_id"], c["id"], eid, e["submission_id"], dumps(a["typed_data"]),
-                                                    a["signature"], a["signer"], a["expiry"], now()))
-        log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... signed the attestation (expires {a['expiry']})",
-                     c["id"], a["attestation_id"])
-    return row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
+        cur = row(conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (c["id"],)).fetchone())
+        if cur is None:
+            conn.execute("INSERT INTO attestations(id, challenge_id, evaluation_id, submission_id, typed_data, signature, signer, "
+                         "expiry, created_at, evidence_digest, verification, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (a["attestation_id"], c["id"], e["id"], e["submission_id"], dumps(a["typed_data"]), a["signature"],
+                          a["signer"], a["expiry"], t, a.get("evidence_digest"), verification, t))
+            v = a.get("verification") or {}
+            how = (f" after its own replays violated the rule in {v.get('violated')} of {v.get('replays')}"
+                   if v.get("replays") else "")
+            log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... signed the attestation{how} "
+                         f"(expires {a['expiry']})", c["id"], a["attestation_id"])
+            change = "signed"
+        elif cur["evaluation_id"] != e["id"]:
+            raise ChainError("this challenge already holds an attestation for another evaluation")
+        elif cur["id"] != a["attestation_id"] or cur["expiry"] != a["expiry"]:
+            conn.execute("UPDATE attestations SET id=?, typed_data=?, signature=?, signer=?, expiry=?, evidence_digest=?, "
+                         "verification=COALESCE(?, verification), updated_at=? WHERE challenge_id=?",
+                         (a["attestation_id"], dumps(a["typed_data"]), a["signature"], a["signer"], a["expiry"],
+                          a.get("evidence_digest"), verification, t, c["id"]))
+            if a.get("kind") == "reverified":
+                log_activity(conn, "attestation.signed", f"Evaluator {a['signer'][:10]}... replayed the submission itself and "
+                             f"signed a new attestation over its own evidence (expires {a['expiry']}; replaces {cur['id']}, "
+                             "signed before the signer verified submissions itself)", c["id"], a["attestation_id"])
+                change = "reverified"
+            else:
+                log_activity(conn, "attestation.renewed", f"Evaluator {a['signer'][:10]}... re-signed the same attestation with a "
+                             f"new expiry {a['expiry']} (was {cur['expiry']}; replaces {cur['id']})", c["id"], a["attestation_id"])
+                change = "renewed"
+        else:
+            change = "unchanged"
+    return row(conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (c["id"],)).fetchone()), change
 
 
-def request_attestation_safely(conn: sqlite3.Connection, eid: str) -> None:
+def request_attestation(conn: sqlite3.Connection, eid: str, retry_failed: bool = True) -> dict:
+    """Ask the signer once. Returns {"status": signed | pending | refused | failed | unavailable, ...}.
+
+    A stored attestation is returned without asking only while it is usable (more than
+    ATTESTATION_MARGIN seconds left); otherwise the signer is asked to renew it.
+    `retry_failed=False` polls: a failed verification is reported instead of re-run."""
     from . import services
 
+    existing = row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
+    if attestation_usable(existing):
+        return {"status": "signed", "change": "stored", "attestation": existing}
     e = services.get_evaluation(conn, eid)
     c = services.get_challenge(conn, e["challenge_id"])
     if c["status"] != "funded":
-        return
+        raise ChainError(f"challenge is {c['status']}; nothing to attest")
+    body = {"evaluation_id": eid, "evidence_digest": e["evidence_digest"], "spec_digest": c["spec_digest"],
+            "onchain_challenge_id": c["onchain_id"], "submission_id": e["submission_id"], "retry_failed": retry_failed}
     try:
-        request_attestation(conn, eid)
-    except Exception as ex:
-        log_activity(conn, "attestation.pending", f"Attestation not obtained yet: {redact(str(ex))[:300]}", c["id"], eid)
+        r = _signer_post(body)
+    except httpx.HTTPError as ex:
+        return {"status": "unavailable", "detail": f"signer unreachable at {settings().signer_url}: {type(ex).__name__}"}
+    try:
+        a = r.json()
+    except ValueError:
+        a = {}
+    if not isinstance(a, dict):
+        a = {}
+    if r.status_code == 200 and a.get("status", "signed") == "signed":
+        stored, change = _store_attestation(conn, c, e, a)
+        return {"status": "signed", "change": change, "attestation": stored}
+    if r.status_code == 202:
+        return {"status": "pending", "signer_status": a.get("status"), "verification": a.get("verification"),
+                "detail": a.get("reason")}
+    detail = a.get("detail")
+    if r.status_code == 409:
+        reasons = a.get("refused") or ([detail] if isinstance(detail, str) else (detail or {}).get("refused")) or [r.text[:300]]
+        return {"status": "refused", "signer_status": a.get("status"), "refused": [redact(str(x))[:400] for x in reasons],
+                "verification": a.get("verification")}
+    if r.status_code == 503:
+        return {"status": "failed", "retryable": True, "detail": redact(str(a.get("reason") or detail or r.text))[:400],
+                "verification": a.get("verification")}
+    return {"status": "unavailable", "detail": f"signer answered HTTP {r.status_code}: {redact(str(detail or r.text))[:300]}"}
 
 
 # --------------------------------------------------------------------------- settlement & payouts
+TX_KINDS = ("fund", "commit", "settle", "refund", "withdraw", "deploy")
+
+
+def _own_events(event, rcpt) -> list:
+    """Decoded events of this type emitted by the configured contract only. web3 decodes any
+    log whose ABI matches, whichever contract emitted it, so the emitter is checked here."""
+    contract_addr = (settings().contract or "").lower()
+    return [e for e in event.process_receipt(rcpt) if str(e["address"]).lower() == contract_addr]
+
+
 def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind: str) -> dict:
-    """Record a settle/refund/withdraw transaction from its receipt and events."""
+    """Record a settle/refund/withdraw transaction from its receipt and events. The receipt must
+    be a transaction to the configured contract, only that contract's logs count, and settle
+    and refund events must name this challenge's on-chain id."""
     web3, c, rcpt = _receipt(tx_hash)
     cid = challenge_row["id"]
     frm = rcpt["from"].lower()
+    if rcpt.to is None or rcpt.to.lower() != (settings().contract or "").lower():
+        raise ChainError("transaction was not sent to the CounterProof contract")
+    if kind in ("settle", "refund") and not challenge_row.get("onchain_id"):
+        raise ChainError("this challenge has no on-chain id; nothing to settle or refund")
     if rcpt.status != 1:
         _track(conn, tx_hash, kind, "failed", cid, frm, block=rcpt.blockNumber, error="reverted")
         log_activity(conn, f"{kind}.failed", f"{kind} transaction reverted on {network_label()}", cid, tx_hash.lower())
         return {"status": "failed"}
     detail: dict = {}
     if kind == "settle":
-        evs = c.events.ChallengeSettled().process_receipt(rcpt)
-        if not evs or str(evs[0]["args"]["challengeId"]) != challenge_row["onchain_id"]:
+        evs = [e for e in _own_events(c.events.ChallengeSettled(), rcpt)
+               if str(e["args"]["challengeId"]) == str(challenge_row["onchain_id"])]
+        if not evs:
             raise ChainError("no ChallengeSettled event for this challenge in the transaction")
         a = evs[0]["args"]
         detail = {"submission_id": "0x" + bytes(a["submissionId"]).hex(), "recipient": a["recipient"].lower(),
@@ -278,14 +420,15 @@ def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind:
         conn.execute("UPDATE challenges SET status='settled', updated_at=? WHERE id=?", (now(), cid))
         msg = f"Settled on {network_label()}: {a['reward']} wei credited to {detail['recipient']}"
     elif kind == "refund":
-        evs = c.events.ChallengeRefunded().process_receipt(rcpt)
+        evs = [e for e in _own_events(c.events.ChallengeRefunded(), rcpt)
+               if str(e["args"]["challengeId"]) == str(challenge_row["onchain_id"])]
         if not evs:
-            raise ChainError("no ChallengeRefunded event in the transaction")
+            raise ChainError("no ChallengeRefunded event for this challenge in the transaction")
         conn.execute("UPDATE challenges SET status='refunded', updated_at=? WHERE id=?", (now(), cid))
         detail = {"publisher": evs[0]["args"]["publisher"].lower(), "reward_wei": str(evs[0]["args"]["reward"])}
         msg = f"Refunded on {network_label()}: reward returned to the publisher's credit"
     elif kind == "withdraw":
-        evs = c.events.Withdrawn().process_receipt(rcpt)
+        evs = _own_events(c.events.Withdrawn(), rcpt)
         if not evs:
             raise ChainError("no Withdrawn event in the transaction")
         a = evs[0]["args"]
@@ -299,7 +442,20 @@ def verify_tx(conn: sqlite3.Connection, challenge_row: dict, tx_hash: str, kind:
 
 
 def record_failed_tx(conn: sqlite3.Connection, challenge_id: int, tx_hash: str | None, kind: str, error: str) -> None:
-    """A wallet rejection or a send error reported by the browser (no receipt exists)."""
+    """A wallet rejection or a send error reported by the browser (no receipt exists). The
+    browser's report never overwrites a transaction already confirmed from its receipt."""
+    import re
+
+    if kind not in TX_KINDS:
+        raise ChainError(f"unknown transaction kind {kind!r}")
+    if tx_hash is not None and not re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash):
+        raise ChainError("tx_hash must be a 32-byte hex transaction hash")
     log_activity(conn, f"{kind}.failed", f"{kind} not sent: {redact(error)[:200]}", challenge_id, tx_hash)
     if tx_hash:
-        _track(conn, tx_hash, kind, "failed", challenge_id, None, error=redact(error)[:300])
+        s = settings()
+        conn.execute("INSERT INTO transactions(hash, chain_id, kind, status, challenge_id, from_addr, detail, block_number, error, "
+                     "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(chain_id, hash) DO UPDATE SET "
+                     "status=excluded.status, error=excluded.error, updated_at=excluded.updated_at "
+                     "WHERE transactions.status != 'confirmed'",
+                     (tx_hash.lower(), s.chain_id, kind, "failed", challenge_id, None, dumps({}), None, redact(error)[:300],
+                      now(), now()))

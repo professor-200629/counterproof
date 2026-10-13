@@ -255,7 +255,7 @@
   "planted_defects": [],
   "provenance": "Repair of the 1.0.0 fixture, written by the CounterProof team.",
   "key": "ref-purchasing-agent@1.1.0",
-  "artifact_digest": "sha256:6051bbaf4fc5b844a4b4c942658085f99728df6713cb9d7cd9e555d57348b154",
+  "artifact_digest": "sha256:260b4b56a3354ff91485de34eac42aba741d91d78fe49963719c369b5f2ed08c",
   "hosted": true
  },
  "runs": [

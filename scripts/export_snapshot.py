@@ -23,7 +23,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 API = sys.argv[sys.argv.index("--api") + 1] if "--api" in sys.argv else "http://127.0.0.1:8010"
 OUT = ROOT / "web" / "public" / "snapshot"
-SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "MNEMONIC")
+SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "PASSCODE", "MNEMONIC")
 
 
 def snapshot_file(api_path: str, suffix: str = ".json") -> Path:
@@ -96,10 +96,16 @@ def main() -> int:
     save("/api/overview", overview)
     for ch in chosen:
         view = get(f"/api/challenges/{ch['id']}")
-        get(f"/api/challenges/{ch['id']}/settlement")
+        sett = get(f"/api/challenges/{ch['id']}/settlement")
+        # The signer's own verification bundle behind the attestation (absent on attestations
+        # signed before the signer verified submissions itself).
+        if (sett.get("attestation") or {}).get("evidence_digest"):
+            get(f"/api/evidence/{sett['attestation']['evidence_digest']}")
         get(f"/api/specs/{view['spec_digest']}")
         for reg in get(f"/api/challenges/{ch['id']}/regressions"):
             get(f"/api/regressions/{reg['id']}")
+            if reg.get("model_proposals_digest"):
+                get(f"/api/model-proposals/{reg['model_proposals_digest']}")
             get(f"/api/regressions/{reg['id']}/export")
             py = c.get(f"/api/regressions/{reg['id']}/export?format=pytest")
             if py.status_code == 200:
@@ -114,7 +120,9 @@ def main() -> int:
         for cand in view["candidates"]:
             get(f"/api/candidates/{cand['id']}")
         for ev in view["evaluations"]:
-            get(f"/api/evaluations/{ev['id']}")
+            full = get(f"/api/evaluations/{ev['id']}")
+            if full.get("model_proposals_digest"):
+                get(f"/api/model-proposals/{full['model_proposals_digest']}")
             if ev.get("evidence_digest"):
                 get(f"/api/evidence/{ev['evidence_digest']}")
             summary = ev.get("summary") if isinstance(ev.get("summary"), dict) else {}

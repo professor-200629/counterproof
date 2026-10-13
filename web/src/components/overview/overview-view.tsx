@@ -7,11 +7,14 @@ import { PageHeader, Section } from "@/components/ui/section";
 import { Stat, StatGrid } from "@/components/ui/stat";
 import { ErrorState, Loading, QueryState } from "@/components/ui/states";
 import { TextLink } from "@/components/ui/text-link";
-import { isBackendUnreachable, type Overview } from "@/lib/api";
+import { isBackendUnreachable, type ChallengeListItem, type NetworkKind, type Overview } from "@/lib/api";
+import { nativeSymbol } from "@/lib/chain";
 import { formatNumber, plural } from "@/lib/format";
 import { POLL_MS, useChallenges, useConfig, useOverview } from "@/lib/queries";
 import { RecordedMark } from "@/components/snapshot";
 import { ActivityFeed } from "./activity-feed";
+import { everFunded, verifiedSplit } from "./featured-data";
+import { FeaturedFinding } from "./featured-finding";
 import { ChallengesTable } from "./challenges-table";
 import { EnvironmentPanel } from "./environment-panel";
 import { ProofLimits } from "./proof-limits";
@@ -25,6 +28,7 @@ const OVERVIEW_ROWS = 6;
 export function OverviewView() {
   const overview = useOverview();
   const challenges = useChallenges();
+  const config = useConfig();
 
   const header = (
     <PageHeader
@@ -87,8 +91,14 @@ export function OverviewView() {
     <>
       {header}
       <div className="space-y-8">
+        {challenges.data ? (
+          <FeaturedFinding challenges={challenges.data} />
+        ) : challenges.isPending ? (
+          <Loading label="featured finding" rows={3} card />
+        ) : null}
+
         {overview.data ? (
-          <>
+          <div className="space-y-2">
             {overview.isError ? (
               <ErrorState
                 compact
@@ -97,8 +107,9 @@ export function OverviewView() {
                 onRetry={() => void overview.refetch()}
               />
             ) : null}
-            <OverviewStats data={overview.data} />
-          </>
+            <OverviewStats data={overview.data} list={challenges.data ?? null} />
+            <CurrencyLegend network={SNAPSHOT_MANIFEST?.network ?? config.data?.network ?? null} />
+          </div>
         ) : overview.isPending ? (
           <Loading label="overview counts" rows={2} card />
         ) : (
@@ -158,18 +169,37 @@ export function OverviewView() {
   );
 }
 
-function OverviewStats({ data }: { data: Overview }) {
+/**
+ * The overview counts. "Awaiting settlement" is the backend's `funded` count (status funded
+ * now); "Ever funded" and the live-model / fixture split of verified violations are derived
+ * here from the challenge list, since the overview payload does not carry them.
+ */
+function OverviewStats({ data, list }: { data: Overview; list: ChallengeListItem[] | null }) {
+  const split = list ? verifiedSplit(list) : null;
+  const partial = !!list && SNAPSHOT_MODE && SNAPSHOT_MANIFEST !== null && SNAPSHOT_MANIFEST.challenges_included.length < SNAPSHOT_MANIFEST.challenges_on_evaluator;
   return (
-    <StatGrid columns={2} className="lg:grid-cols-5">
+    <StatGrid columns={6}>
       <Stat
-        className="col-span-2 lg:col-span-1"
         label="Challenges"
         value={formatNumber(data.challenges)}
         hint={SNAPSHOT_MODE && SNAPSHOT_MANIFEST
           ? `included in this recorded snapshot (${SNAPSHOT_MANIFEST.challenges_included.length} of ${SNAPSHOT_MANIFEST.challenges_on_evaluator} on the evaluator)`
           : "published on this backend"}
       />
-      <Stat label="Funded" value={formatNumber(data.funded)} hint="reward escrowed, not yet settled or refunded" />
+      <Stat
+        label="Awaiting settlement"
+        value={formatNumber(data.funded)}
+        hint="funded now: reward escrowed, not yet settled or refunded"
+      />
+      <Stat
+        label="Ever funded"
+        value={list ? formatNumber(everFunded(list)) : "-"}
+        hint={
+          list
+            ? `challenges with a recorded funding transaction, whatever their status now${partial ? " (of those included)" : ""}`
+            : "needs the challenge list, which has not loaded"
+        }
+      />
       <Stat
         label={
           <>
@@ -192,7 +222,7 @@ function OverviewStats({ data }: { data: Overview }) {
         label="Verified violations"
         value={formatNumber(data.verified_violations)}
         tone={data.verified_violations > 0 ? "bad" : undefined}
-        hint="evaluator replays that reproduced a rule violation"
+        hint={<VerifiedHint total={data.verified_violations} split={split} />}
       />
       <Stat
         label="Settled"
@@ -201,6 +231,54 @@ function OverviewStats({ data }: { data: Overview }) {
         hint="attestation accepted on chain, recipient credited"
       />
     </StatGrid>
+  );
+}
+
+/** What the verified-violation count is made of: live-model agents vs planted-defect fixtures. */
+function VerifiedHint({ total, split }: { total: number; split: ReturnType<typeof verifiedSplit> | null }) {
+  const base = "evaluations whose replays reproduced a rule violation";
+  if (!split || total === 0) return <>{base}</>;
+  const parts = [
+    `${formatNumber(split.liveModel)} on a live-model agent`,
+    `${formatNumber(split.plantedFixture)} on a planted-defect fixture`,
+    ...(split.other > 0 ? [`${formatNumber(split.other)} on another target`] : []),
+  ];
+  return (
+    <>
+      {base}: {parts.join(", ")}
+      {split.listed !== total ? ` (split covers the ${formatNumber(split.listed)} in the listed challenges)` : ""}
+    </>
+  );
+}
+
+/**
+ * Two currencies appear in this console and must not be confused: rewards in the network's
+ * native token (testnet MON on Monad testnet), and amounts inside the invented marketplace
+ * (SYN), which are synthetic units.
+ */
+function CurrencyLegend({ network }: { network: NetworkKind | string | null }) {
+  const symbol = nativeSymbol(network);
+  const reward =
+    network === "monad-testnet"
+      ? "Rewards in testnet MON: Monad testnet's native token, moved by real testnet transactions; it has no monetary value."
+      : network === "anvil-local"
+        ? `Rewards in ${symbol}: a value on a local development chain (31337), not Monad and of no value.`
+        : network === "offchain"
+          ? "No rewards: this backend runs off-chain and escrows nothing."
+          : "Rewards are in the settlement network's native token.";
+  return (
+    <dl aria-label="Currencies on this page" className="grid gap-x-6 gap-y-1 text-xs text-muted sm:grid-cols-2">
+      <div className="flex min-w-0 gap-1.5">
+        <dt className="shrink-0 font-semibold text-fg">{symbol ? symbol.split(" ")[0] : "Reward"}</dt>
+        <dd className="min-w-0">{reward}</dd>
+      </div>
+      <div className="flex min-w-0 gap-1.5">
+        <dt className="shrink-0 font-semibold text-fg">SYN</dt>
+        <dd className="min-w-0">
+          Prices, budgets and payments inside the invented marketplace: synthetic units, no real money or account.
+        </dd>
+      </div>
+    </dl>
   );
 }
 

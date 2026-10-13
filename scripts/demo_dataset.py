@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import httpx  # noqa: E402
+import operator_auth  # noqa: E402  - the API refuses changes without the operator token
 
 from counterproof import devchain  # noqa: E402
 
@@ -41,7 +42,7 @@ RULES = [
 
 class Api:
     def __init__(self) -> None:
-        self.c = httpx.Client(base_url=API, timeout=120)
+        self.c = httpx.Client(base_url=API, timeout=120, headers=operator_auth.require_headers())
 
     def get(self, p):
         r = self.c.get(p)
@@ -62,6 +63,24 @@ class Api:
                 return v
             time.sleep(0.7)
         raise TimeoutError(p)
+
+    def attestation(self, cid: int, eid: str, timeout: float = 600) -> dict:
+        """The signer replays the committed candidate itself before it signs, so the attestation
+        arrives asynchronously: poll the settlement endpoint (and ask once if nothing is queued)."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            s = self.get(f"/api/challenges/{cid}/settlement")
+            if s["attestation"] is not None:
+                return s["attestation"]
+            job = s.get("attestation_job")
+            if job is None:
+                r = self.c.post(f"/api/evaluations/{eid}/attest")
+                if r.status_code not in (200, 202):
+                    raise RuntimeError(f"attest -> {r.status_code}: {r.text[:400]}")
+            elif job["status"] in ("done", "failed", "cancelled"):
+                raise RuntimeError(f"no attestation: job {job['status']}, signer said {json.dumps(job.get('result'))[:500]}")
+            time.sleep(1.0)
+        raise TimeoutError(f"no attestation for challenge {cid} after {timeout:.0f} s")
 
 
 def hx(rcpt) -> str:
@@ -114,12 +133,11 @@ def main() -> int:
         ev = api.post(f"/api/candidates/{cands[rule]['id']}/submit")
         evals[rule] = api.wait(f"/api/evaluations/{ev['id']}", lambda v: v["status"] not in ("queued", "replaying"))
         print(f"  {rule}: {evals[rule]['outcome']}")
-    att = api.get(f"/api/challenges/{a['id']}/settlement")["attestation"]
-    if att is None:  # the worker without the signer token leaves it pending; the API has the token
-        api.post(f"/api/evaluations/{evals['R1']['id']}/attest")
-        att = api.get(f"/api/challenges/{a['id']}/settlement")["attestation"]
+    att = api.attestation(a["id"], evals["R1"]["id"])
     m = att["typed_data"]["message"]
-    assert m["evidenceDigest"] == "0x" + api.get(f"/api/evaluations/{att['evaluation_id']}")["evidence_digest"][7:]
+    # The signed evidence is the signer's own verification bundle, served by the API.
+    assert att["evidence_digest"] and m["evidenceDigest"] == "0x" + att["evidence_digest"][7:]
+    assert api.get(f"/api/evidence/{att['evidence_digest']}")["verdict"]["outcome"] == "verified_violation"
     tup = (int(m["challengeId"]), bytes.fromhex(m["specDigest"][2:]), bytes.fromhex(m["submissionId"][2:]),
            bytes.fromhex(m["candidateDigest"][2:]), bytes.fromhex(m["evidenceDigest"][2:]),
            w3.to_checksum_address(m["challenger"]), w3.to_checksum_address(m["recipient"]), int(m["verdict"]), int(m["expiry"]))

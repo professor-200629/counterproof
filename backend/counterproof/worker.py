@@ -1,8 +1,12 @@
 """Background worker: `python -m counterproof.worker`.
 
-Claims queued jobs (search runs, evaluations, regressions), runs each in a thread with a
-cancel event, heartbeats every second and propagates cancellation requests from the API.
-On start it recovers jobs a previous worker left in `running`.
+Claims queued jobs (search runs, evaluations, regressions, attestation requests), runs each
+in a thread with a cancel event, heartbeats every second and propagates cancellation
+requests from the API. On start it recovers jobs a previous worker left in `running`.
+
+An attestation job asks the evaluator's signer, which replays the committed candidate
+itself before it signs (minutes for a live model), and polls it until it signs, refuses or
+reports a failure. The evaluation job only queues it; it never waits for the signer.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import subprocess
 import threading
 import time
 import traceback
@@ -18,11 +23,36 @@ from . import jobs, services
 from .db import connect, migrate, now
 from .evaluator import evaluate
 from .redact import redact
-from .runner.sandbox import DockerBackend
 from .strategies.catalog import STRATEGIES
 from .strategies.harness import Budget, Harness
 
 log = logging.getLogger("counterproof.worker")
+
+TARGET_LABEL = "label=counterproof.target=1"  # the label sandbox.DockerBackend gives every target container
+
+
+def sweep_stopped_targets() -> int:
+    """Remove target containers that have stopped but were not removed (a crashed worker).
+
+    Never a running one. Every target container carries the same label, whoever started it:
+    another worker, and the evaluator's signer, which replays each committed candidate itself
+    (minutes for a live model) before it signs. A child killed from outside ends its replay as
+    `target_crash`, which counts as a replay that did not violate, so sweeping running
+    containers could turn a valid finding into a final refusal. A running orphan is left
+    alone: its `docker run -i` client died with its worker, which closes the container's
+    stdin, so the target normally exits and `--rm` removes it; one that does not is left to
+    the operator rather than risk killing a live replay. `docker rm` is called without -f,
+    so a container that is running by then is refused, not killed.
+    """
+    try:
+        r = subprocess.run(["docker", "ps", "-aq", "--filter", TARGET_LABEL, "--filter", "status=exited",
+                            "--filter", "status=dead"], capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return 0
+    ids = r.stdout.split() if r.returncode == 0 else []
+    if ids:
+        subprocess.run(["docker", "rm", *ids], capture_output=True, timeout=30)
+    return len(ids)
 
 
 def _sync_domain_after_recovery(conn, changed: list[dict]) -> None:
@@ -41,6 +71,40 @@ def _sync_domain_after_recovery(conn, changed: list[dict]) -> None:
                              ("runner_failure" if status == "failed" else "cancelled", now(), p["evaluation_id"]))
         elif j["kind"] == "regression":
             conn.execute("UPDATE regressions SET status=? WHERE id=?", (status, p["regression_id"]))
+        elif j["kind"] == "attestation" and status != "queued":
+            services.log_activity(conn, "attestation.pending", f"Attestation not obtained: the job was {status} when its "
+                                  "worker stopped; request it again", p.get("challenge_id"), p["evaluation_id"])
+
+
+def _effective_budget(run: dict, spec: dict) -> dict:
+    """Defence in depth: clamp the stored budget again to the owner's role caps before the
+    harness sees it (rows queued before the API clamped, or edited in the database)."""
+    from .limits import clamp_budget, role_of
+    from .targets import registry
+
+    target = registry.ADAPTERS.get(f"{spec['target']['adapter']}@{spec['target']['version']}")
+    model_involved = run["mode"] == "model-assisted" or bool(target and target.requires_model)
+    budget, _ = clamp_budget(run["budget"], role_of(run.get("owner")), model_involved)
+    return budget
+
+
+def _effective_params(run: dict, spec: dict) -> dict:
+    """Defence in depth for the run parameters, like _effective_budget: clamp them again to the
+    owner's role caps, and run a non-operator's model-assisted generator on the configured
+    provider/model whatever the stored row says."""
+    from .limits import clamp_params, configured_model, role_of
+
+    role = role_of(run.get("owner"))
+    params = clamp_params(run["params"] or {}, role, spec["scope"]["max_actions"])
+    if run["strategy"] == "model-assisted" and role != "operator":
+        params["provider"], params["model"] = configured_model()
+    return params
+
+
+def _bind_spend(client, owner: str | None, job_id: str | None) -> None:
+    """Attribute the client's model calls to who queued the job (ledger, per-session budget)."""
+    client.owner = owner
+    client.job_id = job_id
 
 
 class Worker:
@@ -55,7 +119,7 @@ class Worker:
         changed = jobs.recover(self.conn)
         _sync_domain_after_recovery(self.conn, changed)
         try:
-            DockerBackend.sweep_orphans()
+            sweep_stopped_targets()
         except Exception:
             pass
         for ch in changed:
@@ -114,6 +178,9 @@ class Worker:
                               (now(), p["evaluation_id"]))
         elif job["kind"] == "regression":
             self.conn.execute("UPDATE regressions SET status='failed', finished_at=? WHERE id=?", (now(), p["regression_id"]))
+        elif job["kind"] == "attestation":
+            services.log_activity(self.conn, "attestation.pending", f"Attestation not obtained: {error[:300]}",
+                                  p.get("challenge_id"), p["evaluation_id"])
 
     # ------------------------------------------------------------------ handlers
     def handle(self, job: dict, cancel: threading.Event) -> dict:
@@ -124,6 +191,8 @@ class Worker:
             return self._evaluation(job["params"]["evaluation_id"], cancel)
         if kind == "regression":
             return self._regression(job["params"]["regression_id"], job["params"]["candidate"], cancel)
+        if kind == "attestation":
+            return self._attestation(job["id"], job["params"]["evaluation_id"], cancel)
         raise ValueError(f"unknown job kind {kind}")
 
     def _search(self, rid: str, cancel: threading.Event) -> dict:
@@ -137,10 +206,12 @@ class Worker:
         from .providers import broker_for_spec, provenance_for
 
         challenger, recipient = challenger_identity()
-        budget = Budget(**{k: v for k, v in run["budget"].items() if k in Budget.__dataclass_fields__})
+        budget = Budget(**{k: v for k, v in _effective_budget(run, spec).items() if k in Budget.__dataclass_fields__})
+        params = _effective_params(run, spec)
         broker = broker_for_spec(spec, budget)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, run.get("owner"), run.get("job_id"))
         last = [0.0]
 
         def progress(record: dict) -> None:
@@ -151,12 +222,13 @@ class Worker:
         if run["strategy"] == "model-assisted":
             from .strategies.model_assisted import ModelAssisted
 
-            gen = ModelAssisted(spec, run["params"], budget)
+            gen = ModelAssisted(spec, params, budget)
             gen.client.cancel = cancel
+            _bind_spend(gen.client, run.get("owner"), run.get("job_id"))
             proposals, model_label = gen.proposals(), gen.label
         else:
-            proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, run["params"]), None
-        h = Harness(spec=spec, spec_dgst=c["spec_digest"], strategy=run["strategy"], params=run["params"], budget=budget,
+            proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, params), None
+        h = Harness(spec=spec, spec_dgst=c["spec_digest"], strategy=run["strategy"], params=params, budget=budget,
                     challenger=challenger, recipient=recipient, run_id=rid, cancel=cancel, progress=progress,
                     broker=broker, model_label=model_label)
         if run["strategy"] == "model-assisted":
@@ -201,36 +273,94 @@ class Worker:
         e = services.get_evaluation(conn, eid)
         if e["candidate_id"]:
             conn.execute("UPDATE candidates SET status='replaying' WHERE id=?", (e["candidate_id"],))
-        from .providers import broker_for_spec
+        from .providers import broker_for_spec, recording_broker
 
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, e.get("owner"), e.get("job_id"))
+        recorder = recording_broker(broker)  # what the model proposed, per replay (sidecar, not evidence)
         bundle = evaluate(spec=spec, spec_dgst=d, candidate=candidate, submission=submission,
-                          broker=broker, cancel=cancel)
+                          broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
+        services.save_model_proposals(conn, "evaluations", eid, recorder, bundle)
         e = services.record_evaluation(conn, eid, bundle)
-        if bundle["verdict"]["outcome"] == "verified_violation" and bundle["verdict"]["reward_eligible"]:
-            from .chain import request_attestation_safely
+        out = {"outcome": bundle["verdict"]["outcome"], "evidence_digest": e["evidence_digest"]}
+        if bundle["verdict"]["outcome"] == "verified_violation" and bundle["verdict"]["reward_eligible"] and \
+                services.get_challenge(conn, e["challenge_id"])["status"] == "funded":
+            from .chain import enqueue_attestation
 
-            request_attestation_safely(conn, eid)
-        return {"outcome": bundle["verdict"]["outcome"], "evidence_digest": e["evidence_digest"]}
+            out["attestation_job"] = enqueue_attestation(conn, eid)["id"]
+        return out
+
+    def _attestation(self, job_id: str, eid: str, cancel: threading.Event) -> dict:
+        """Poll the signer until it signs, refuses or fails (it replays the candidate itself)."""
+        from . import chain
+
+        conn = self.conn
+        cid = services.get_evaluation(conn, eid)["challenge_id"]
+        deadline = time.monotonic() + chain.ATTESTATION_POLL_LIMIT
+        announced = False
+        last: dict = {}
+        first = True
+        while True:
+            if cancel.is_set():
+                return {"status": "cancelled", **last}
+            try:
+                # The first call is the request (it may retry a failed verification); the
+                # rest only poll its outcome, so a provider failure is reported, not re-run.
+                res = chain.request_attestation(conn, eid, retry_failed=first)
+                first = first and res["status"] == "unavailable"
+            except chain.ChainError as ex:
+                services.log_activity(conn, "attestation.refused", f"Attestation not requested: {redact(str(ex))[:300]}", cid, eid)
+                return {"status": "not_requested", "detail": redact(str(ex))[:300]}
+            last = {k: v for k, v in res.items() if k != "attestation"}
+            jobs.progress(conn, job_id, last)
+            status = res["status"]
+            if status == "signed":
+                a = res["attestation"]
+                return {"status": "signed", "change": res.get("change"), "attestation_id": a["id"], "expiry": a["expiry"],
+                        "evidence_digest": a.get("evidence_digest"), "verification": a.get("verification")}
+            if status == "refused":
+                services.log_activity(conn, "attestation.refused", "The evaluator's signer refused: "
+                                      + "; ".join(res["refused"])[:400], cid, eid)
+                return last
+            if status == "failed":
+                services.log_activity(conn, "attestation.failed", ("The evaluator's signer could not complete its own replay "
+                                      f"(not a verdict; request the attestation again to retry): {res['detail']}")[:500], cid, eid)
+                return last
+            if status == "pending" and not announced:
+                announced = True
+                v = res.get("verification") or {}
+                what = (f"{v.get('replays')} fresh {v.get('mode')} replay(s), at least {v.get('required')} must violate the rule"
+                        if v.get("replays") else "another submission for this challenge first")
+                services.log_activity(conn, "attestation.verifying", "The evaluator's signer is replaying the committed "
+                                      f"candidate itself before it signs ({what})", cid, eid)
+            if time.monotonic() > deadline:
+                services.log_activity(conn, "attestation.pending", "Attestation not obtained yet: the signer had not finished "
+                                      f"after {int(chain.ATTESTATION_POLL_LIMIT)} s ({last.get('detail') or status}); "
+                                      "request it again", cid, eid)
+                return {**last, "status": "timed_out"}
+            cancel.wait(chain.ATTESTATION_POLL_SECONDS)
 
     def _regression(self, rid: str, candidate: dict, cancel: threading.Event) -> dict:
         conn = self.conn
         r = services.get_regression(conn, rid)
         spec = services.get_spec(conn, r["spec_digest"])
         conn.execute("UPDATE regressions SET status='replaying' WHERE id=?", (rid,))
-        from .providers import broker_for_spec
+        from .providers import broker_for_spec, recording_broker
 
         broker = broker_for_spec(spec, None)
         if broker is not None:
             broker.client.cancel = cancel
+            _bind_spend(broker.client, r.get("owner"), r.get("job_id"))
+        recorder = recording_broker(broker)
         bundle = evaluate(spec=spec, spec_dgst=r["spec_digest"], candidate=candidate,
                           submission={"submission_id": f"regression:{rid}", "challenger": candidate["challenger"],
                                       "recipient": candidate["recipient"]},
-                          broker=broker, cancel=cancel)
-        services.record_regression(conn, rid, bundle)
-        return {"outcome": bundle["verdict"]["outcome"]}
+                          broker=recorder or broker, cancel=cancel, on_replay=recorder and recorder.on_replay)
+        services.save_model_proposals(conn, "regressions", rid, recorder, bundle)
+        r = services.record_regression(conn, rid, bundle)
+        return {"outcome": r["outcome"]}  # the regression's reading, not only the evaluator's verdict
 
 
 def main() -> None:

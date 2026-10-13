@@ -28,3 +28,6 @@ contracts/broadcast/*/31337/
 # misc
 .DS_Store
 *.log
+
+# agent worktrees
+.claude/worktrees/

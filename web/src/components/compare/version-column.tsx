@@ -14,6 +14,8 @@ import { statusMeta, type StatusDomain } from "@/lib/status";
 import { agentClaims, distinctLedgerDigests, ledgerFacts, violatedCount } from "./ledger-facts";
 
 export interface VersionColumnProps {
+  /** Extra facts under the bundle facts (e.g. model proposals observed by the broker). */
+  footer?: ReactNode;
   eyebrow: string;
   title: string;
   /** Outcome to show (evaluation outcome / regression status). */
@@ -41,7 +43,7 @@ function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
 }
 
 /** One side of the before / after comparison, read entirely from its evidence bundle. */
-export function VersionColumn({ eyebrow, title, status, domain, bundle, rule, currency, evidenceHref, placeholder, className }: VersionColumnProps) {
+export function VersionColumn({ eyebrow, title, status, domain, bundle, rule, currency, evidenceHref, placeholder, footer, className }: VersionColumnProps) {
   const tone = status ? statusMeta(status, domain).tone : "neutral";
   return (
     <Card as="article" tone={tone} className={cn("flex flex-col", className)} aria-label={`${eyebrow}: ${title}`}>
@@ -58,6 +60,7 @@ export function VersionColumn({ eyebrow, title, status, domain, bundle, rule, cu
         ) : (
           <BundleFacts bundle={bundle.data} rule={rule} currency={currency} domain={domain} evidenceHref={evidenceHref} />
         )}
+        {!placeholder && footer ? footer : null}
       </CardBody>
     </Card>
   );
@@ -156,8 +159,8 @@ function BundleFacts({
       </dl>
       {facts.length ? (
         <p className="text-xs text-subtle">
-          Numbers above are computed on this page from replay 1&apos;s ledger in the evidence bundle; the outcome is the
-          evaluator&apos;s deterministic checker.
+          Numbers above are computed on this page from replay {first?.index ?? 0}&apos;s ledger in the evidence bundle; the outcome
+          is the evaluator&apos;s deterministic checker.
         </p>
       ) : null}
 

@@ -13,7 +13,14 @@
   so a slow live-model run does not block other jobs (claiming a job is atomic).
 
 Ports: web 3000, API 8010, signer 8011, anvil 8545. Ctrl+C stops everything.
-Each process receives only the secrets its role needs.
+Each process receives only the secrets its role needs. The web dev server listens on
+127.0.0.1 only (its /api proxy would otherwise expose the API to the network).
+
+Who may change things (backend/counterproof/auth.py): the operator token
+(COUNTERPROOF_OPERATOR_TOKEN from the environment or .env, else generated for this launch and
+written to data/operator.token for scripts/operator.py and the other scripts) and the judge
+passcode (COUNTERPROOF_JUDGE_PASSCODE from the environment or .env, else generated for this
+launch into data/judge.passcode). Only the API process receives them; neither is printed.
 """
 
 from __future__ import annotations
@@ -56,13 +63,52 @@ def wait_port(port: int, timeout: float = 60) -> None:
     raise RuntimeError(f"port {port} did not open")
 
 
+AUTH_NOTE = ""
+
+
+def api_auth(env_file: dict) -> dict:
+    """The operator token and judge passcode, for the API process only. Never printed: the
+    console says where each one is, so the owner can hand the passcode to a judge."""
+    global AUTH_NOTE
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import operator_auth
+
+    from counterproof.auth import MIN_OPERATOR_TOKEN_CHARS, MIN_PASSCODE_CHARS
+
+    op = os.environ.get("COUNTERPROOF_OPERATOR_TOKEN") or env_file.get("COUNTERPROOF_OPERATOR_TOKEN")
+    judge = os.environ.get("COUNTERPROOF_JUDGE_PASSCODE") or env_file.get("COUNTERPROOF_JUDGE_PASSCODE")
+    # The API ignores shorter secrets (auth.py); starting anyway would leave scripts/operator.py
+    # (the stop switch) or judge sign-in silently refused. Say so before anything starts.
+    for name, value, minimum in (("COUNTERPROOF_OPERATOR_TOKEN", op, MIN_OPERATOR_TOKEN_CHARS),
+                                 ("COUNTERPROOF_JUDGE_PASSCODE", judge, MIN_PASSCODE_CHARS)):
+        if value and len(value) < minimum:
+            raise SystemExit(f"{name} is shorter than {minimum} characters, so the API would ignore it. Use a longer "
+                             f"random value, or remove it and dev.py generates one for each launch.")
+    op_src = "COUNTERPROOF_OPERATOR_TOKEN"
+    if not op:
+        op, op_src = secrets.token_urlsafe(32), "generated for this launch"
+    operator_auth.write_token_file(op)
+    passcode_file = ROOT / "data" / "judge.passcode"
+    if judge:
+        judge_src = "COUNTERPROOF_JUDGE_PASSCODE (environment or .env)"
+    else:
+        judge = secrets.token_urlsafe(9)
+        passcode_file.parent.mkdir(parents=True, exist_ok=True)
+        passcode_file.write_text(judge, encoding="utf-8")
+        judge_src = f"generated for this launch: see {passcode_file.relative_to(ROOT)}"
+    AUTH_NOTE = (f"Judge sign-in passcode: {judge_src}. Operator token: {op_src} "
+                 f"(scripts read {operator_auth.TOKEN_FILE.relative_to(ROOT)}; stop everything with scripts/operator.py stop).")
+    return {"COUNTERPROOF_OPERATOR_TOKEN": op, "COUNTERPROOF_JUDGE_PASSCODE": judge}
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "local"
     web = "--no-web" not in sys.argv
     from counterproof import devchain
 
     procs: list[tuple[str, subprocess.Popen]] = []
-    base = {k: v for k, v in os.environ.items() if not any(h in k.upper() for h in ("KEY", "TOKEN", "SECRET", "PRIVATE"))}
+    base = {k: v for k, v in os.environ.items()
+            if not any(h in k.upper() for h in ("KEY", "TOKEN", "SECRET", "PRIVATE", "PASSWORD", "PASSCODE"))}
     base |= {"PYTHONIOENCODING": "utf-8", "COUNTERPROOF_ENV_FILE": str(ROOT / "data" / "no.env")}
     env_file = read_env()
     token = secrets.token_hex(16)
@@ -129,9 +175,18 @@ def main() -> int:
     for k in ("COUNTERPROOF_LLM_PROVIDER", "COUNTERPROOF_LLM_MODEL"):
         if k in env_file:
             common[k] = env_file[k]
+    from counterproof.limits import FORWARDED_SETTINGS
+
+    for k in FORWARDED_SETTINGS:  # server-side limits and auth settings: not secrets, but some names hold "TOKEN"
+        if os.environ.get(k) or env_file.get(k):
+            common[k] = os.environ.get(k) or env_file[k]
     common |= {"COUNTERPROOF_SIGNER_TOKEN": token, "COUNTERPROOF_SIGNER_URL": "http://127.0.0.1:8011"}
     roles["worker"] |= providers
     roles["api"] |= providers
+    roles["api"] |= api_auth(env_file)
+    # The signer replays every submission itself before it signs, live-model ones included,
+    # so its model broker needs the provider key (target children never receive it).
+    roles["signer"] |= providers
     workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 2
     services = [("signer", "counterproof.signer"), ("api", "counterproof.api")] + [("worker", "counterproof.worker")] * workers
     for name, module in services:
@@ -140,9 +195,10 @@ def main() -> int:
     wait_port(8010)
     if web:
         npm = "pnpm.cmd" if os.name == "nt" else "pnpm"
-        procs.append(("web", subprocess.Popen([npm, "dev", "--port", "3000"], cwd=str(ROOT / "web"),
+        procs.append(("web", subprocess.Popen([npm, "dev", "--port", "3000", "--hostname", "127.0.0.1"], cwd=str(ROOT / "web"),
                                               env=base | web_env | {"BACKEND_URL": "http://127.0.0.1:8010"})))
-    print(f"\nCounterProof ({mode}) running: web http://localhost:3000  api http://127.0.0.1:8010/api/config\nCtrl+C to stop.")
+    print(f"\nCounterProof ({mode}) running: web http://127.0.0.1:3000 (or http://localhost:3000)  "
+          f"api http://127.0.0.1:8010/api/config\n{AUTH_NOTE}\nCtrl+C to stop.")
     try:
         while all(p.poll() is None for _, p in procs):
             time.sleep(1)

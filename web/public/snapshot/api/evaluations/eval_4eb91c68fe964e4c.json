@@ -1,0 +1,68 @@
+{
+ "id": "eval_4eb91c68fe964e4c",
+ "challenge_id": 4,
+ "submission_id": "sub_0b45a9d7a9ed4739",
+ "job_id": "job_20366793a8fc4292",
+ "status": "not_reproduced",
+ "outcome": "not_reproduced",
+ "evidence_digest": "sha256:bc32225a2cc2289bf0d5e207b8566d9d7525d5d30469ad695d76d5d1648167d9",
+ "summary": {
+  "outcome": "not_reproduced",
+  "reason": "claimed rule not violated in any of 3 replays",
+  "summary": null,
+  "rule": null,
+  "reward_eligible": false,
+  "replays": [
+   {
+    "index": 0,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:816bb2e35cfe9d1d435fd800c366f6e11a39f1dfe7edb6b7aab5f66d3394ae64",
+    "claimed_rule_violated": false
+   },
+   {
+    "index": 1,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:816bb2e35cfe9d1d435fd800c366f6e11a39f1dfe7edb6b7aab5f66d3394ae64",
+    "claimed_rule_violated": false
+   },
+   {
+    "index": 2,
+    "run_outcome": "completed",
+    "ledger_digest": "sha256:816bb2e35cfe9d1d435fd800c366f6e11a39f1dfe7edb6b7aab5f66d3394ae64",
+    "claimed_rule_violated": false
+   }
+  ]
+ },
+ "created_at": 1791864010,
+ "finished_at": 1791864194,
+ "model_proposals_digest": "sha256:3dc2dced9e23a52dd1c35a91ce7725e681b4172681fe214878920476aacf8c0c",
+ "challenger": "0x0000000000000000000000000000000000000002",
+ "recipient": "0x0000000000000000000000000000000000000002",
+ "commit_tx": null,
+ "source": "offchain",
+ "candidate_id": null,
+ "candidate_digest": "sha256:5ebc06e7dc6522f6ada380cbe160587d11112845a2bcf11ff79e05fabf6de01a",
+ "job": {
+  "id": "job_20366793a8fc4292",
+  "kind": "evaluation",
+  "status": "done",
+  "params": {
+   "evaluation_id": "eval_4eb91c68fe964e4c"
+  },
+  "result": {
+   "outcome": "not_reproduced",
+   "evidence_digest": "sha256:bc32225a2cc2289bf0d5e207b8566d9d7525d5d30469ad695d76d5d1648167d9"
+  },
+  "error": null,
+  "attempts": 1,
+  "max_attempts": 2,
+  "cancel_requested": 0,
+  "worker": "Professor04:20516",
+  "heartbeat_at": 1791864194,
+  "created_at": 1791864010,
+  "started_at": 1791864010,
+  "finished_at": 1791864194
+ },
+ "attestation": null,
+ "attestation_job": null
+}

@@ -16,7 +16,7 @@ import { Countdown, DateTime, TimeAgo } from "@/components/ui/time";
 import type { ChallengeView } from "@/lib/api";
 import { formatWei, txNetworkPhrase } from "@/lib/chain";
 import { TextLink } from "@/components/ui/text-link";
-import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { useCompareLinkLabel } from "@/components/compare/compare-link-label";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -32,6 +32,7 @@ export function ChallengeHeader({ view, now }: { view: ChallengeView; now: numbe
   const offchain = view.status === "offchain" || view.network === "offchain";
   const deadlines = view.spec.deadlines;
   const submissionsClosed = now !== null && now / 1000 > deadlines.submission_deadline;
+  const compareLabel = useCompareLinkLabel(view.id, view.spec.target, "Repair and regression");
 
   return (
     <>
@@ -60,7 +61,7 @@ export function ChallengeHeader({ view, now }: { view: ChallengeView; now: numbe
               Settlement
             </ButtonLink>
             <ButtonLink href={`/challenges/${view.id}/compare`} icon={<GitCompare />}>
-              {SNAPSHOT_MODE ? "Before / after (recorded)" : "Repair and regression"}
+              {compareLabel}
             </ButtonLink>
           </>
         }

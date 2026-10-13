@@ -68,7 +68,8 @@ class TargetRef(_S):
     adapter: str
     version: str
     artifact_digest: str
-    label: Literal["intentionally-vulnerable-fixture", "repaired-fixture", "independent-implementation"]
+    label: Literal["intentionally-vulnerable-fixture", "repaired-fixture", "independent-implementation",
+                   "repaired-live-model"]
     determinism: Literal["deterministic", "stochastic"]
     config: dict = Field(default_factory=dict)
 

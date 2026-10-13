@@ -12,6 +12,12 @@
  * Snapshot mode (NEXT_PUBLIC_SNAPSHOT=1, see lib/snapshot.ts): every GET reads the recorded
  * response under /snapshot instead, a missing file is a 404 "not included in this recorded
  * snapshot", and every mutation throws a read-only ApiError without any request.
+ *
+ * Authentication (live mode): reads are public; every change needs a session. The judge signs
+ * in with a passcode (POST /api/session); the backend sets an HttpOnly, SameSite=Strict cookie
+ * the browser sends on same-origin /api requests, and returns a CSRF token that this module
+ * keeps in memory only and sends as X-CSRF-Token on every mutation. A 401 on a mutation
+ * dispatches AUTH_REQUIRED_EVENT so the shell can open the sign-in panel.
  */
 
 import { NOT_IN_SNAPSHOT, READ_ONLY_DETAIL, READ_ONLY_KIND, SNAPSHOT_MODE, snapshotFile } from "./snapshot";
@@ -26,7 +32,11 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 export type JsonObject = { [key: string]: JsonValue };
 
 export type NetworkKind = "anvil-local" | "monad-testnet" | "offchain";
-export type TargetLabel = "intentionally-vulnerable-fixture" | "repaired-fixture" | "independent-implementation";
+export type TargetLabel =
+  | "intentionally-vulnerable-fixture"
+  | "repaired-fixture"
+  | "independent-implementation"
+  | "repaired-live-model";
 export type Determinism = "deterministic" | "stochastic";
 
 export type ChallengeStatus = "awaiting_funding" | "funded" | "settled" | "refunded" | "offchain";
@@ -470,7 +480,7 @@ export interface RunSummary {
 
 export interface Job {
   id: string;
-  kind: "search" | "evaluation" | "regression" | string;
+  kind: "search" | "evaluation" | "regression" | "attestation" | string;
   status: JobStatus;
   params: JsonObject;
   result: JsonObject | null;
@@ -491,9 +501,14 @@ export interface Run extends RunSummary {
   job_id: string | null;
   strategy_version: string;
   params: JsonObject;
+  /** The effective budget: the server clamps what was asked to the caller's role caps. */
   budget: RunBudget;
   provenance: RunProvenance | null;
   job: Job | null;
+  /** Who queued it: "operator", or "judge:sess_..." for a judge session. */
+  owner?: string | null;
+  /** POST only: budget fields the server lowered, {field: {requested, effective}}. */
+  budget_clamped?: Record<string, { requested: JsonValue; effective: number }>;
 }
 
 export interface RunCreate {
@@ -556,6 +571,33 @@ export function finishedSummary(e: Pick<Evaluation, "summary"> | null | undefine
   return s && "outcome" in s ? s : null;
 }
 
+/**
+ * The evaluator signer's OWN verification of a submission: before it signs, the signer
+ * replays the committed candidate itself (the spec's k-of-n policy, fresh isolated
+ * children, its own model broker) and signs the digest of its own bundle. The worker's
+ * evaluation is recorded only as provenance.
+ */
+export interface SignerVerification {
+  by?: string;
+  status: "verifying" | "verified" | "rejected" | "failed" | string;
+  outcome: EvaluationOutcome | null;
+  reason: string | null;
+  mode: "deterministic" | "stochastic" | string | null;
+  /** Fresh replays the signer ran (n) and how many violated the claimed rule. */
+  replays: number | null;
+  replays_done?: number | null;
+  violated: number | null;
+  /** k: violations the spec requires. */
+  required: number | null;
+  /** The signer's own evidence bundle (the digest it signs). */
+  evidence_digest: Digest | null;
+  attempt?: number | null;
+  started_at?: UnixSeconds | null;
+  finished_at?: UnixSeconds | null;
+  worker_evaluation_id?: string | null;
+  worker_evidence_digest?: Digest | null;
+}
+
 export interface AttestationRow {
   id: string;
   challenge_id: number;
@@ -566,6 +608,31 @@ export interface AttestationRow {
   signer: string;
   expiry: UnixSeconds;
   created_at: UnixSeconds;
+  /**
+   * The signer's own verification bundle - the evidence digest it signed. Absent (null) on
+   * attestations signed before the signer verified submissions itself (those signed the
+   * worker's evaluation digest, e.g. the recorded Monad testnet run).
+   */
+  evidence_digest?: Digest | null;
+  verification?: SignerVerification | null;
+  /** Set when the attestation was renewed (same message, later expiry). */
+  updated_at?: UnixSeconds | null;
+}
+
+/** POST /api/evaluations/{id}/attest when no usable attestation exists yet (HTTP 202). */
+export interface AttestQueued {
+  status: "queued" | "verifying";
+  job_id: string;
+  evaluation_id: string;
+  job: Job | null;
+  /** The expired attestation being renewed, if any. */
+  attestation: AttestationRow | null;
+}
+
+export type AttestResponse = AttestationRow | AttestQueued;
+
+export function isAttestQueued(r: AttestResponse | null | undefined): r is AttestQueued {
+  return !!r && "job_id" in r && (r.status === "queued" || r.status === "verifying");
 }
 
 export interface Evaluation {
@@ -592,6 +659,8 @@ export interface Evaluation {
   /** Only on GET /api/evaluations/{id} and submit responses. */
   job?: Job | null;
   attestation?: AttestationRow | null;
+  /** Only on GET /api/evaluations/{id}: the latest request to the evaluator's signer. */
+  attestation_job?: Job | null;
   /** Set when the same candidate was already submitted (no second payable finding). */
   duplicate?: boolean;
 }
@@ -710,6 +779,12 @@ export interface SettlementAttestation {
   signer: string;
   expiry: UnixSeconds;
   evaluation_id: string;
+  id?: string;
+  /** The signer's own verification bundle (see AttestationRow.evidence_digest); null on older attestations. */
+  evidence_digest?: Digest | null;
+  verification?: SignerVerification | null;
+  created_at?: UnixSeconds | null;
+  updated_at?: UnixSeconds | null;
 }
 
 /** The contract's view of a challenge (read from chain by the backend). */
@@ -731,6 +806,11 @@ export interface Settlement {
   onchain_error?: string;
   /** Explorer template with `{hash}`, null for anvil / off-chain. */
   explorer_template: string | null;
+  /**
+   * The latest request to the evaluator's signer for this challenge (a worker job that polls
+   * it while the signer replays the candidate itself). Absent in older recordings.
+   */
+  attestation_job?: Job | null;
 }
 
 export interface ChainTransaction {
@@ -770,11 +850,44 @@ export interface Regression {
   job_id: string | null;
   status: RegressionStatus;
   outcome: EvaluationOutcome | null;
+  /**
+   * Why the regression ended as it did (absent on rows recorded before it existed). A regression
+   * confirms a repair only when every replay completed: when the evaluator's verdict is
+   * not_reproduced but some replays did not complete, the outcome is inconclusive and this says why.
+   */
+  outcome_reason?: string | null;
   evidence_digest: Digest | null;
+  /** Digest of the model-proposals sidecar recorded for this replay (live-model targets). */
+  model_proposals_digest?: Digest | null;
   created_at: UnixSeconds;
   finished_at: UnixSeconds | null;
   /** Present on GET /api/regressions/{id}; absent in the per-challenge list. */
   job?: Job | null;
+}
+
+/** Per-replay summary in a model-proposals sidecar (GET /api/model-proposals/{digest}). */
+export interface ModelProposalSummary {
+  run_outcome: string | null;
+  model_calls: number;
+  proposed_by_tool: Record<string, number>;
+  not_offered_by_tool: Record<string, number>;
+  provider_rejected_by_tool: Record<string, number>;
+  failed_generations: number;
+  privileged_proposed: number;
+  privileged_rejected_by_provider: number;
+  privileged_attempts_in_ledger: number;
+  privileged_blocked_by_agent: number;
+}
+
+/** What the model proposed, observed by the evaluator's broker; stored alongside, not inside, the sealed bundle. */
+export interface ModelProposals {
+  format: string;
+  evidence_digest: Digest | null;
+  spec_digest?: Digest | null;
+  target: string;
+  model: string | null;
+  note: string;
+  replays: { index: number; summary: ModelProposalSummary }[];
 }
 
 export interface RegressionExport {
@@ -795,6 +908,7 @@ export interface RegressionExport {
   last_result: {
     target: string;
     outcome: EvaluationOutcome | null;
+    outcome_reason?: string | null;
     evidence_digest: Digest | null;
     spec_digest: Digest;
   };
@@ -891,10 +1005,42 @@ function withQuery(path: string, query?: Query): string {
 }
 
 export interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   body?: unknown;
   query?: Query;
   signal?: AbortSignal;
+}
+
+// ---------------------------------------------------------------------------- session (CSRF)
+/** Header the backend compares with the session's CSRF token on every cookie-authenticated change. */
+export const CSRF_HEADER = "X-CSRF-Token";
+/** window event: a change was refused with 401 (detail: the ApiError). The shell opens sign-in. */
+export const AUTH_REQUIRED_EVENT = "counterproof:auth-required";
+
+/** The current session's CSRF token: in memory only (never storage), read from GET /api/session. */
+let csrfToken: string | null = null;
+let csrfLoad: Promise<string | null> | null = null;
+
+export function setCsrfToken(token: string | null | undefined): void {
+  csrfToken = token ?? null;
+}
+
+export function getCsrfToken(): string | null {
+  return csrfToken;
+}
+
+/** The CSRF token, fetched once from GET /api/session when a page was reloaded with a session cookie. */
+async function ensureCsrfToken(): Promise<string | null> {
+  if (csrfToken || typeof window === "undefined") return csrfToken;
+  csrfLoad ??= fetch(`${apiBase()}/api/session`, { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store" })
+    .then(async (r) => (r.ok ? ((await r.json()) as { csrf_token?: string | null }).csrf_token ?? null : null))
+    .catch(() => null)
+    .finally(() => {
+      csrfLoad = null;
+    });
+  const t = await csrfLoad;
+  if (t && !csrfToken) csrfToken = t;
+  return csrfToken;
 }
 
 /** Low-level request. Throws ApiError with the backend's `detail` on any non-2xx. */
@@ -902,14 +1048,24 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   if (SNAPSHOT_MODE) return snapshotRequest<T>(path, opts);
   const fullPath = withQuery(path, opts.query);
   const url = `${apiBase()}/api${fullPath}`;
+  const method = opts.method ?? (opts.body === undefined ? "GET" : "POST");
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  // Signing in is the one change that needs no session (and gets its token in the response).
+  const signingIn = method === "POST" && fullPath === "/session";
+  if (method !== "GET" && !signingIn) {
+    const token = await ensureCsrfToken();
+    if (token) headers[CSRF_HEADER] = token;
+  }
   let res: Response;
   try {
     res = await fetch(url, {
-      method: opts.method ?? (opts.body === undefined ? "GET" : "POST"),
-      headers: opts.body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
+      method,
+      headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       signal: opts.signal,
       cache: "no-store",
+      credentials: "same-origin",
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
@@ -934,15 +1090,29 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     if (!detail) detail = `HTTP ${res.status} ${res.statusText}`.trim();
     // The Next proxy answers 500 with an empty/HTML body when the backend is down.
     const unreachable = (res.status === 500 || res.status === 502 || res.status === 504) && !obj;
-    throw new ApiError({
+    const error = new ApiError({
       status: unreachable ? 0 : res.status,
       detail: unreachable ? `Backend unreachable through the /api proxy (HTTP ${res.status}). Is the API running on BACKEND_URL?` : detail,
       kind: obj && typeof obj.kind === "string" ? obj.kind : null,
       path: fullPath,
       body: parsed,
     });
+    if (method !== "GET" && !signingIn) {
+      if (res.status === 401) {
+        setCsrfToken(null);
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: error }));
+      } else if (res.status === 403 && /X-CSRF-Token/i.test(detail)) {
+        setCsrfToken(null); // a stale token: the next attempt re-reads it from GET /api/session
+      }
+    }
+    throw error;
   }
   return parsed as T;
+}
+
+/** True when a change was refused for want of a session (sign in and try again). */
+export function isAuthRequired(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 /**
@@ -1026,8 +1196,97 @@ export interface Erc8004Record {
   registries_source?: string;
 }
 
+// ---------------------------------------------------------------------------- session
+/** Server caps for a role (backend limits.py), as GET /api/session reports them. */
+export interface RoleLimits {
+  max_sequences: number;
+  max_wall_seconds: number;
+  max_model_calls: number;
+  max_model_tokens: number;
+  max_actions: number;
+  max_sequences_per_call: number;
+  /** 0 = no per-session limit (the operator). */
+  max_active_jobs: number;
+  /** Model tokens per session per UTC day; 0 = no per-session limit. */
+  daily_tokens: number;
+  /** Every session of this role together (signing in again does not reset these); 0 = none. */
+  all_sessions_active_jobs?: number;
+  all_sessions_daily_tokens?: number;
+  max_queued_jobs: number;
+  /** Judges only: the provider/model their live-model work is fixed to. */
+  model?: string;
+  temperature?: number;
+  max_steps?: number;
+}
+
+export interface SessionUsage {
+  active_jobs: number;
+  max_active_jobs: number | null;
+  tokens_today: number;
+  daily_tokens: number | null;
+  /** The lower of this session's own budget and what all judge sessions together have left. */
+  tokens_remaining: number | null;
+  /** Judges: all judge sessions together. */
+  all_sessions_tokens_today?: number;
+  all_sessions_daily_tokens?: number | null;
+  all_sessions_active_jobs?: number;
+  all_sessions_max_active_jobs?: number | null;
+  global_tokens_today: number;
+  global_daily_ceiling: number;
+  day: string;
+}
+
+export interface OperatorStopState {
+  active: boolean;
+  by: string;
+  reason: string;
+  at: UnixSeconds;
+}
+
+/** GET /api/session (and the response to signing in). */
+export type SessionInfo =
+  | {
+      authenticated: false;
+      role: null;
+      auth_configured: boolean;
+      operator_stop: OperatorStopState | null;
+      limits: { judge: RoleLimits };
+    }
+  | {
+      authenticated: true;
+      role: "judge" | "operator";
+      via: "cookie" | "bearer";
+      owner: string;
+      expires_at: UnixSeconds | null;
+      csrf_token: string | null;
+      operator_stop: OperatorStopState | null;
+      limits: RoleLimits;
+      usage: SessionUsage;
+    };
+
+/** The judge caps that apply when nobody is signed in yet, or the session's own. */
+export function sessionLimits(session: SessionInfo | null | undefined): RoleLimits | null {
+  if (!session) return null;
+  return session.authenticated ? session.limits : session.limits.judge;
+}
+
 // ---------------------------------------------------------------------------- endpoints
 export const api = {
+  getSession: () => apiRequest<SessionInfo>("/session"),
+  /** Sign in with the judge passcode; sets the HttpOnly session cookie and keeps the CSRF token in memory. */
+  signIn: async (passcode: string) => {
+    const s = await apiRequest<SessionInfo>("/session", { method: "POST", body: { passcode } });
+    if (s.authenticated) setCsrfToken(s.csrf_token);
+    return s;
+  },
+  signOut: async () => {
+    try {
+      return await apiRequest<{ signed_out: boolean }>("/session", { method: "DELETE" });
+    } finally {
+      setCsrfToken(null);
+    }
+  },
+
   health: () => apiRequest<{ ok: boolean; version: string; time: UnixSeconds }>("/health"),
   getConfig: () => apiRequest<AppConfig>("/config"),
   getErc8004: () => apiRequest<Erc8004Record>("/erc8004"),
@@ -1072,14 +1331,19 @@ export const api = {
   /** Re-queue an evaluation whose outcome is runner_failure (409 for any other verdict - those are final). */
   retryEvaluation: (evaluationId: string) =>
     apiRequest<Evaluation>(`/evaluations/${enc(evaluationId)}/retry`, { method: "POST" }),
-  /** Ask the evaluator's signer for an EIP-712 attestation (funded challenges only). */
-  attest: (evaluationId: string) => apiRequest<AttestationRow>(`/evaluations/${enc(evaluationId)}/attest`, { method: "POST" }),
+  /**
+   * Ask the evaluator's signer for an EIP-712 attestation, or renew an expired one (funded
+   * challenges only). 200: a usable attestation. 202: queued - the signer first replays the
+   * committed candidate itself (minutes for a live model); poll the settlement.
+   */
+  attest: (evaluationId: string) => apiRequest<AttestResponse>(`/evaluations/${enc(evaluationId)}/attest`, { method: "POST" }),
 
   getEvidence: (digest: Digest) => apiRequest<EvidenceBundle>(`/evidence/${enc(digest)}`),
   getJob: (jobId: string) => apiRequest<Job>(`/jobs/${enc(jobId)}`),
 
   createRegression: (body: { candidate_id: string; target: string }) => apiRequest<Regression>("/regressions", { body }),
   getRegression: (regressionId: string) => apiRequest<Regression>(`/regressions/${enc(regressionId)}`),
+  getModelProposals: (digest: Digest) => apiRequest<ModelProposals>(`/model-proposals/${enc(digest)}`),
   listChallengeRegressions: (challengeId: number | string) =>
     apiRequest<Regression[]>(`/challenges/${enc(String(challengeId))}/regressions`),
   getRegressionExport: (regressionId: string) => apiRequest<RegressionExport>(`/regressions/${enc(regressionId)}/export`),

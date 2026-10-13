@@ -47,6 +47,24 @@ Covers cross-chain, cross-contract and recipient-substitution attacks with one s
 The API/worker never hold the evaluator key (role-based `.env` loading). The signer
 re-checks the sealed bundle, replays deterministic candidates itself and reads the chain.
 
+**Revised 2026-10-13: the signer verifies every target itself and signs its own evidence.**
+Ledger hash chains have no secret, so a compromised worker could fabricate a live-model
+bundle that passes `recheck_bundle`; the old signer signed such a bundle (reproduced in a
+test). The signer now replays the committed candidate for every target with
+`evaluator.evaluate` (unchanged, so the k-of-n policy is the same code), using a model
+broker in its own process, and signs the digest of its own bundle. Costs: the signer holds
+the provider key (targets still get neither key), a live-model attestation takes minutes
+and doubles provider usage, so it is asynchronous (signer state in `signer.sqlite`, an
+`attestation` worker job polls it). Attestations can be renewed (same message, later
+expiry, capped at the settlement deadline) while the challenge is funded; renewal never
+re-runs a stochastic replay. Attestations signed before this change (the recorded testnet
+ones) carry the worker's evidence digest and are labelled as such in the console.
+The signer does not trust its own database either, because `signer.sqlite` sits in the
+data directory the API and worker write: a stored attestation must recover to the evaluator
+key, and a renewal needs an HMAC (key derived from the evaluator key) on the signer's
+'verified' row. A separate signer-only directory was not chosen: the shipped launchers run
+every role as one OS user, so it would not change who can write the file.
+
 ### D12. Native testnet MON, no tokens
 Avoids token dependencies, approvals and extra contracts.
 

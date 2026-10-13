@@ -62,6 +62,35 @@ describe("overview /", () => {
     expect(hrefs(html)).toContain("/challenges/new");
   });
 
+  it("without a live-model finding, features the newest verified violation and keeps its fixture label prominent", () => {
+    const ev = view.evaluations[0];
+    const { html, text } = render(createElement(OverviewView), {
+      data: [
+        [qk.overview, overview],
+        [qk.challenges, list],
+        [qk.config, config],
+        [qk.challenge("1"), view],
+        [qk.evidence(ev.evidence_digest as string), bundle],
+        [qk.challengeRegressions("1"), [regression]],
+      ],
+    });
+    expect(text).toContain("Featured finding (no live-model finding recorded)");
+    expect(text).toContain("An intentionally vulnerable fixture violated R1");
+    expect(text.indexOf("Featured finding")).toBeLessThan(text.indexOf("Awaiting settlement"));
+    expect(html).toMatch(/Intentionally vulnerable fixture - planted defects/);
+    expect(text).toContain("No reward: an off-chain challenge produces evidence only.");
+    // A same-family repair is recorded for this fixture: it is shown, with a link to the comparison.
+    expect(text).toContain("Replayed on ref-purchasing-agent@1.1.0");
+    expect(hrefs(html).some((h) => h.startsWith("/challenges/1/compare?") && h.includes(`regression=${regression.id}`))).toBe(true);
+    expect(hrefs(html)).toContain(`/evaluations/${ev.id}`);
+    // Counts: awaiting settlement vs ever funded, and the composition of verified violations.
+    expect(text).toContain("Awaiting settlement");
+    expect(text).toContain("Ever funded");
+    expect(text).toContain("0 on a live-model agent, 1 on a planted-defect fixture");
+    expect(text).toContain("No rewards: this backend runs off-chain and escrows nothing.");
+    expect(text).not.toMatch(CLAIMS_TRUSTLESS);
+  });
+
   it("loading, unreachable and empty", () => {
     expect(render(createElement(OverviewView)).text).toContain("Loading overview counts");
     expect(render(createElement(OverviewView), { errors: [[qk.overview, unreachable("/overview")]] }).text).toContain("Backend unreachable");
@@ -282,6 +311,39 @@ describe("compare /challenges/[id]/compare", () => {
     expect(text).toContain("Replay a verified counterexample");
     expect(text).toContain(regression.id);
     expect(hrefs(html)).toContain(`/evaluations/${view.evaluations[0].id}`);
+    // Same agent family (ref-purchasing-agent 1.0.0 -> 1.1.0), deterministic: the repaired version.
+    expect(text).toContain("The repaired version resisted this sequence");
+    expect(text).not.toContain("different agent family");
+    // The picker offers versions of the same adapter only.
+    expect(html).toContain('value="ref-purchasing-agent@1.1.0"');
+    expect(html).not.toMatch(/value="llm-purchasing-agent@/);
+  });
+
+  it("never takes a re-run of the original version as the repaired version", () => {
+    // Same adapter AND same version as the challenge's target: a re-run, not a repair.
+    const originalKey = `${view.spec.target.adapter}@${view.spec.target.version}`;
+    const rerun = { ...(regression as Record<string, unknown>), id: "reg_rerun_original", target_key: originalKey };
+    const primed = {
+      data: [
+        [qk.challenge("1"), view],
+        [qk.targets, targets],
+        [qk.challengeRegressions("1"), [rerun]],
+        [qk.regression("reg_rerun_original"), rerun],
+        [qk.evidence(evaluation.evidence_digest as string), bundle],
+      ] as [readonly unknown[], unknown][],
+    };
+    // By default the After column stays empty: no repaired version has been replayed.
+    const byDefault = render(el, primed).text;
+    expect(byDefault).toContain("Repaired version: none replayed");
+    expect(byDefault).toContain("No repaired version of this agent has been replayed yet");
+    expect(byDefault).toContain("same version re-run, not a repair");
+    expect(byDefault).not.toContain("resisted this sequence");
+    // Picked explicitly, it is labelled as the original version re-run.
+    const picked = render(createElement(CompareView, { challengeId: "1", initial: { regression: "reg_rerun_original" } }), primed).text;
+    expect(picked).toContain("Same version re-run, not a repair");
+    expect(picked).toContain(`${originalKey} is the original version re-run, not a repair`);
+    expect(picked).not.toContain("The repaired version resisted");
+    expect(picked).not.toMatch(/Regression on ref-purchasing-agent@1\.0\.0/);
   });
 
   it("loading and not found", () => {
@@ -305,5 +367,18 @@ describe("run card: no violation found", () => {
     expect(text).toContain(view.spec.initial_state.world_id);
     expect(text).toContain("Why it stopped");
     expect(text).toContain("Search budget");
+    expect(text).toContain(`Search generator: ${run.mode}`);
+  });
+
+  it("separates the search generator's mode from a live-model target", () => {
+    const run = view.runs[0];
+    const liveView: ChallengeView = {
+      ...view,
+      spec: { ...view.spec, target: { ...view.spec.target, determinism: "stochastic", config: { model: "openai/gpt-oss-120b" } } },
+    };
+    const { text } = render(createElement(RunCard, { run, view: liveView }));
+    expect(text).toContain("Search generator is not the target");
+    expect(text).toContain("openai/gpt-oss-120b");
+    expect(text).toContain("its replies are stochastic");
   });
 });

@@ -2,21 +2,29 @@
 
 The API never returns secrets. Transaction endpoints accept only a hash; amounts,
 addresses and digests are read from the chain receipt, never from the request body.
+
+Reads (GET) are public. Every POST/PUT/PATCH/DELETE needs the operator bearer token or a
+judge/operator cookie session with its CSRF token (auth.py), enforced by one app-wide
+dependency, so a new route is covered without opting in. Budgets, queue capacity, token
+ceilings and the operator stop are enforced server-side (limits.py).
 """
 
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from contextlib import asynccontextmanager
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__, jobs, services
+from . import __version__, auth, jobs, limits, services
 from .canonical import digest
 from .chain import ChainError
 from .config import network_label, settings
@@ -47,14 +55,170 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="CounterProof API", version=__version__, lifespan=lifespan)
+# ----------------------------------------------------------------------------- authentication
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# The only mutation open without credentials: signing in (passcode, rate-limited).
+PUBLIC_MUTATIONS = frozenset({("POST", "/api/session")})
+
+
+def _guard(request: Request) -> None:
+    """App-wide dependency: every unsafe request must come from the operator or a session."""
+    if request.method not in UNSAFE_METHODS or (request.method, request.url.path) in PUBLIC_MUTATIONS:
+        return
+    try:
+        request.state.actor = auth.authenticate(db(), request.headers, request.cookies)
+    except auth.AuthError as e:
+        raise HTTPException(e.status, str(e), headers=e.headers or None) from None
+
+
+def current_actor(request: Request) -> auth.Actor:
+    actor = getattr(request.state, "actor", None)
+    if actor is None:
+        raise HTTPException(401, auth.SIGN_IN)
+    return actor
+
+
+def operator_actor(actor: auth.Actor = Depends(current_actor)) -> auth.Actor:
+    if not actor.is_operator:
+        raise HTTPException(403, "only the operator can do this")
+    return actor
+
+
+def _read_actor(request: Request) -> auth.Actor | None:
+    """The caller of a GET, if any (bearer or cookie; no CSRF needed for a read)."""
+    header = request.headers.get("authorization")
+    if header:
+        scheme, _, value = header.partition(" ")
+        op = auth.operator_token()
+        if scheme.lower() == "bearer" and op and value and auth._eq(value.strip(), op):
+            return auth.Actor(role="operator", owner="operator", via="bearer")
+        return None
+    rec = auth.lookup_session(db(), request.cookies.get(auth.COOKIE))
+    return auth.actor_from_session(rec) if rec else None
+
+
+MAX_BODY_BYTES = 256 * 1024
+
+
+class _NonFinite(Exception):
+    pass
+
+
+def _non_finite(_value) -> float:
+    raise _NonFinite()
+
+
+def has_non_finite_number(body: bytes) -> bool:
+    """True when a JSON body holds NaN, Infinity or a float that overflows to infinity (1e999).
+    Python's parser accepts all three; FastAPI would pass them to int() (OverflowError, a 500)
+    or store them as JSON that browsers cannot parse. A body that is not JSON is left to the
+    route's own parsing."""
+
+    def parse_float(s: str) -> float:
+        f = float(s)
+        if not math.isfinite(f):
+            raise _NonFinite()
+        return f
+
+    try:
+        json.loads(body, parse_constant=_non_finite, parse_float=parse_float)
+    except _NonFinite:
+        return True
+    except Exception:  # noqa: BLE001 - not JSON, or too deep: FastAPI answers that itself
+        return False
+    return False
+
+
+class BodyLimit:
+    """Request bodies: 413 over MAX_BODY_BYTES, declared or not, and 400 for a JSON body with a
+    non-finite number. The body (at most MAX_BODY_BYTES) is read here before the route sees it:
+    a chunked body over the limit is refused with 413 as soon as it passes the limit, instead of
+    failing inside FastAPI's own body parsing."""
+
+    def __init__(self, app, max_bytes: int = MAX_BODY_BYTES):
+        self.app, self.max = app, max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                too_big = int(declared) > self.max
+            except ValueError:
+                too_big = True
+            if too_big:
+                return await self._refuse(send, 413, f"request body over {self.max // 1024} KB")
+        chunks, size, more = [], 0, True
+        while more:
+            msg = await receive()
+            if msg["type"] != "http.request":  # the client went away before sending its body
+                return
+            chunk = msg.get("body", b"")
+            size += len(chunk)
+            if size > self.max:
+                return await self._refuse(send, 413, f"request body over {self.max // 1024} KB")
+            chunks.append(chunk)
+            more = msg.get("more_body", False)
+        body = b"".join(chunks)
+        if body and b"json" in headers.get(b"content-type", b"").lower() and has_non_finite_number(body):
+            return await self._refuse(send, 400, "JSON numbers must be finite: NaN and Infinity are not accepted")
+        delivered = False
+
+        async def replay():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+    async def _refuse(self, send, status: int, detail: str):
+        body = json.dumps({"detail": detail}).encode()
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
+class ForwardedHostCheck:
+    """DNS rebinding through the Next.js /api proxy: it rewrites Host to the backend and puts
+    the browser's Host in X-Forwarded-Host, so that one must be an allowed host too."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            fwd = dict(scope.get("headers") or []).get(b"x-forwarded-host")
+            if fwd is not None and not all(auth.host_allowed(h.strip()) for h in fwd.decode("latin-1").split(",")):
+                body = b"Invalid host header"
+                await send({"type": "http.response.start", "status": 400,
+                            "headers": [(b"content-type", b"text/plain"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
+app = FastAPI(title="CounterProof API", version=__version__, lifespan=lifespan, dependencies=[Depends(_guard)])
+# Innermost first. CORS is not authentication: no credentials are allowed cross-origin.
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type", auth.CSRF_HEADER],
+                   allow_credentials=False)
+app.add_middleware(BodyLimit)
+app.add_middleware(ForwardedHostCheck)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=auth.allowed_hosts())
 
 
 @app.exception_handler(services.ServiceError)
 async def _service_error(_r: Request, e: services.ServiceError):
     return JSONResponse({"detail": redact(str(e))}, status_code=e.status)
+
+
+@app.exception_handler(limits.LimitError)
+async def _limit_error(_r: Request, e: limits.LimitError):
+    return JSONResponse({"detail": redact(str(e)), "kind": "limit"}, status_code=e.status)
 
 
 @app.exception_handler(ChainError)
@@ -158,6 +322,89 @@ def overview() -> dict:
     return services.overview(db())
 
 
+# ----------------------------------------------------------------------------- sessions (auth.py)
+class SessionCreate(BaseModel):
+    passcode: str = Field(max_length=512)
+
+
+def _session_view(actor: auth.Actor | None) -> dict:
+    conn = db()
+    stop = limits.stop_state(conn)
+    if actor is None:
+        return {"authenticated": False, "role": None, "auth_configured": auth.configured(), "operator_stop": stop,
+                "limits": {"judge": _role_limits("judge")}}
+    return {"authenticated": True, "role": actor.role, "via": actor.via, "owner": actor.owner,
+            "expires_at": actor.expires_at, "csrf_token": actor.csrf_token, "operator_stop": stop,
+            "limits": _role_limits(actor.role), "usage": limits.usage_view(conn, actor.owner, actor.role)}
+
+
+def _role_limits(role: str) -> dict:
+    out = limits.caps(role).as_dict()
+    if role != "operator":
+        provider, model = limits.configured_model()
+        out |= {"model": f"{provider}/{model}", "temperature": 0, "max_steps": limits.JUDGE_MAX_STEPS}
+    return out | {"max_queued_jobs": limits.max_queued_jobs()}
+
+
+@app.post("/api/session")
+def create_session(body: SessionCreate, request: Request) -> JSONResponse:
+    """Sign in with the judge passcode (or the operator token): sets the session cookie and
+    returns the CSRF token. Failed attempts are rate-limited per client and overall."""
+    origin = auth.origin_of(request.headers)
+    if request.headers.get("origin") and origin not in auth.allowed_origins():
+        raise HTTPException(403, f"origin {origin} is not allowed to sign in here (COUNTERPROOF_ALLOWED_ORIGINS)")
+    client = auth.client_of(request.client.host if request.client else None, request.headers.get("x-forwarded-for"))
+    try:
+        sid, rec = auth.sign_in(db(), body.passcode, client)
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=e.status, headers=e.headers or None)
+    resp = JSONResponse(_session_view(auth.actor_from_session(rec)))
+    resp.set_cookie(value=sid, **auth.cookie_kwargs(rec["expires_at"] - rec["created_at"]))
+    return resp
+
+
+@app.get("/api/session")
+def get_session(request: Request) -> dict:
+    """Who this browser (cookie) or script (bearer) is, its limits and today's usage."""
+    return _session_view(_read_actor(request))
+
+
+@app.delete("/api/session")
+def delete_session(request: Request, actor: auth.Actor = Depends(current_actor)) -> JSONResponse:
+    revoked = auth.revoke_session(db(), request.cookies.get(auth.COOKIE)) if actor.via == "cookie" else False
+    resp = JSONResponse({"signed_out": revoked})
+    resp.delete_cookie(auth.COOKIE, path="/api", httponly=True, samesite="strict", secure=auth.cookie_secure())
+    return resp
+
+
+# ----------------------------------------------------------------------------- operator controls
+class OperatorStop(BaseModel):
+    reason: str = Field(default="", max_length=200)
+
+
+@app.post("/api/operator/stop")
+def operator_stop(body: OperatorStop | None = None, actor: auth.Actor = Depends(operator_actor)) -> dict:
+    """Refuse new jobs and model calls, and cancel every queued or running job. Cancellation
+    is cooperative: a model call or sequence already in flight finishes first."""
+    return services.operator_stop(db(), actor, (body.reason if body else "") or "")
+
+
+@app.post("/api/operator/resume")
+def operator_resume(actor: auth.Actor = Depends(operator_actor)) -> dict:
+    return services.operator_resume(db(), actor)
+
+
+@app.get("/api/operator/status")
+def operator_status(request: Request) -> dict:
+    """Queue, usage, ceilings and the stop flag. Operator only (bearer or operator session)."""
+    actor = _read_actor(request)
+    if actor is None:
+        raise HTTPException(401, auth.SIGN_IN)
+    if not actor.is_operator:
+        raise HTTPException(403, "only the operator can read the operator status")
+    return services.operator_status(db())
+
+
 # ----------------------------------------------------------------------------- specs & challenges
 class SpecRequest(BaseModel):
     title: str
@@ -176,7 +423,10 @@ class SpecRequest(BaseModel):
     offchain: bool = False
 
 
-def _spec_req(body: SpecRequest) -> dict:
+def _spec_req(body: SpecRequest, actor: auth.Actor | None = None) -> dict:
+    """The spec request. A judge's model target is fixed to the configured provider/model at
+    temperature 0 with at most 8 agent steps, and scope.max_actions is capped (limits.py);
+    the operator's choices pass through."""
     s = settings()
     req = body.model_dump(exclude_none=True)
     req["isolation"] = body.isolation or s.default_isolation
@@ -185,6 +435,18 @@ def _spec_req(body: SpecRequest) -> dict:
         req["settlement"] = None
         req["reward_wei"] = "0"
     target = registry.get(body.target) if body.target in registry.ADAPTERS else None
+    if actor is not None and not actor.is_operator:
+        cfg = limits.judge_target_config(body.target_config, bool(target and target.requires_model))
+        if cfg:
+            req["target_config"] = cfg
+        else:
+            req.pop("target_config", None)
+        cap = limits.caps(actor.role).max_actions
+        scope = dict(req.get("scope") or {})
+        if "max_actions" in scope:
+            scope["max_actions"] = max(1, min(limits.as_int(scope["max_actions"], "scope.max_actions"), cap))
+            req["scope"] = scope
+        return req
     if target and target.requires_model and not body.target_config:
         req["target_config"] = {"provider": s.llm_provider or "groq", "model": s.llm_model or "openai/gpt-oss-20b",
                                 "temperature": 0, "max_steps": 8}
@@ -192,14 +454,14 @@ def _spec_req(body: SpecRequest) -> dict:
 
 
 @app.post("/api/specs/preview")
-def preview_spec(body: SpecRequest) -> dict:
-    spec = services.prepare_spec(_spec_req(body))
+def preview_spec(body: SpecRequest, actor: auth.Actor = Depends(current_actor)) -> dict:
+    spec = services.prepare_spec(_spec_req(body, actor))
     return {"digest": spec_digest(spec), "spec": spec}
 
 
 @app.post("/api/specs")
-def create_spec(body: SpecRequest) -> dict:
-    d, spec = services.create_spec(db(), _spec_req(body))
+def create_spec(body: SpecRequest, actor: auth.Actor = Depends(current_actor)) -> dict:
+    d, spec = services.create_spec(db(), _spec_req(body, actor))
     return {"digest": d, "spec": spec}
 
 
@@ -256,9 +518,9 @@ def record_tx(cid: int, body: TxBody) -> dict:
 
 
 class FailedTx(BaseModel):
-    kind: str
+    kind: Literal["fund", "commit", "settle", "refund", "withdraw", "deploy"]
     error: str
-    tx_hash: str | None = None
+    tx_hash: str | None = Field(default=None, pattern=r"^0x[0-9a-fA-F]{64}$")
 
 
 @app.post("/api/challenges/{cid}/transactions/failed")
@@ -277,10 +539,16 @@ def settlement(cid: int) -> dict:
     conn = db()
     c = services.get_challenge(conn, cid)
     att = conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (cid,)).fetchone()
-    out = {"challenge": c, "attestation": None, "onchain": None, "explorer_template": settings().explorer_tx_url}
+    out = {"challenge": c, "attestation": None, "onchain": None, "explorer_template": settings().explorer_tx_url,
+           "attestation_job": chain.attestation_job(conn, challenge_id=cid)}
     if att:
-        out["attestation"] = {"typed_data": json.loads(att["typed_data"]), "signature": att["signature"],
-                              "signer": att["signer"], "expiry": att["expiry"], "evaluation_id": att["evaluation_id"]}
+        # evidence_digest: the signer's own verification bundle (the one it signed); NULL for
+        # attestations signed before the signer verified submissions itself.
+        out["attestation"] = {"id": att["id"], "typed_data": json.loads(att["typed_data"]), "signature": att["signature"],
+                              "signer": att["signer"], "expiry": att["expiry"], "evaluation_id": att["evaluation_id"],
+                              "evidence_digest": att["evidence_digest"],
+                              "verification": json.loads(att["verification"]) if att["verification"] else None,
+                              "created_at": att["created_at"], "updated_at": att["updated_at"]}
     if c["onchain_id"]:
         try:
             out["onchain"] = chain.read_challenge(int(c["onchain_id"]))
@@ -294,17 +562,23 @@ class RunCreate(BaseModel):
     strategy: str
     params: dict | None = None
     budget: dict | None = None
-    mode: str = "deterministic"
+    # The worker picks the generator from `strategy`; services.start_run requires the two to agree.
+    mode: Literal["deterministic", "model-assisted"] = "deterministic"
 
 
 @app.post("/api/challenges/{cid}/runs")
-def start_run(cid: int, body: RunCreate) -> dict:
-    if body.mode == "model-assisted":
+def start_run(cid: int, body: RunCreate, actor: auth.Actor = Depends(current_actor)) -> dict:
+    """The response's `budget` is the effective (clamped) budget; `budget_clamped` lists the
+    fields the server lowered to the caller's role caps."""
+    params = body.params
+    if body.mode == "model-assisted" and body.strategy == "model-assisted":
         from .providers import ChatClient, PROVIDERS
 
-        provider = (body.params or {}).get("provider") or settings().llm_provider or "groq"
+        if not actor.is_operator:
+            params = limits.judge_run_model(params or {})
+        provider = (params or {}).get("provider") or settings().llm_provider or "groq"
         ChatClient(provider, settings().llm_model or PROVIDERS.get(provider, {}).get("default_model", ""))
-    return services.start_run(db(), cid, body.strategy, body.params, body.budget, body.mode)
+    return services.start_run(db(), cid, body.strategy, params, body.budget, body.mode, actor=actor)
 
 
 @app.get("/api/runs/{rid}")
@@ -313,8 +587,8 @@ def get_run(rid: str) -> dict:
 
 
 @app.post("/api/runs/{rid}/cancel")
-def cancel_run(rid: str) -> dict:
-    return services.cancel_run(db(), rid)
+def cancel_run(rid: str, actor: auth.Actor = Depends(current_actor)) -> dict:
+    return services.cancel_run(db(), rid, actor=actor)
 
 
 @app.get("/api/candidates/{cand_id}")
@@ -323,8 +597,10 @@ def get_candidate(cand_id: str) -> dict:
 
 
 @app.post("/api/candidates/{cand_id}/submit")
-def submit_candidate(cand_id: str) -> dict:
-    return services.submit_candidate(db(), cand_id)
+def submit_candidate(cand_id: str, actor: auth.Actor = Depends(current_actor)) -> dict:
+    """On an on-chain challenge this signs commitSubmission with the challenger bot's key
+    (gas): operator only. Judges may submit on off-chain challenges (no transaction)."""
+    return services.submit_candidate(db(), cand_id, actor=actor)
 
 
 class DigestBody(BaseModel):
@@ -347,8 +623,8 @@ class ExternalSubmission(BaseModel):
 
 
 @app.post("/api/challenges/{cid}/submissions")
-def external_submission(cid: int, body: ExternalSubmission) -> dict:
-    return services.submit_external(db(), cid, body.candidate, body.submission_id)
+def external_submission(cid: int, body: ExternalSubmission, actor: auth.Actor = Depends(current_actor)) -> dict:
+    return services.submit_external(db(), cid, body.candidate, body.submission_id, actor=actor)
 
 
 @app.get("/api/evaluations/{eid}")
@@ -357,15 +633,21 @@ def get_evaluation(eid: str) -> dict:
 
 
 @app.post("/api/evaluations/{eid}/retry")
-def retry_evaluation(eid: str) -> dict:
-    return services.retry_evaluation(db(), eid)
+def retry_evaluation(eid: str, actor: auth.Actor = Depends(current_actor)) -> dict:
+    return services.retry_evaluation(db(), eid, actor=actor)
 
 
 @app.post("/api/evaluations/{eid}/attest")
-def attest(eid: str) -> dict:
+def attest(eid: str, actor: auth.Actor = Depends(current_actor)) -> JSONResponse:
+    """200 with a usable attestation, or 202 {status: queued|verifying, job_id}: the signer
+    replays the committed candidate itself before it signs (minutes for a live model), so
+    the request is handed to a worker job that polls it. An expired attestation is renewed
+    the same way. The signer's token and key never appear in the response. A new job is
+    recorded against the caller and subject to the queue limits and the operator stop."""
     from . import chain
 
-    return chain.request_attestation(db(), eid)
+    code, body = chain.start_attestation(db(), eid, actor=actor)
+    return JSONResponse(json.loads(json.dumps(body, default=str)), status_code=code)
 
 
 @app.get("/api/evidence/{d}")
@@ -374,6 +656,13 @@ def get_evidence(d: str, download: bool = False) -> Response:
     body = json.dumps(bundle, indent=2)
     headers = {"Content-Disposition": f'attachment; filename="evidence-{d[7:19]}.json"'} if download else {}
     return Response(body, media_type="application/json", headers=headers)
+
+
+@app.get("/api/model-proposals/{d}")
+def get_model_proposals(d: str) -> dict:
+    """Read-only: what the evaluator's model broker saw the model propose (sidecar of an
+    evidence bundle). Served only for digests recorded on an evaluation or regression."""
+    return services.model_proposals(db(), d)
 
 
 @app.get("/api/jobs/{jid}")
@@ -391,8 +680,8 @@ class RegressionCreate(BaseModel):
 
 
 @app.post("/api/regressions")
-def create_regression(body: RegressionCreate) -> dict:
-    return services.create_regression(db(), body.candidate_id, body.target)
+def create_regression(body: RegressionCreate, actor: auth.Actor = Depends(current_actor)) -> dict:
+    return services.create_regression(db(), body.candidate_id, body.target, actor=actor)
 
 
 @app.get("/api/regressions/{rid}")
@@ -416,31 +705,99 @@ def export_regression(rid: str, format: str = "json") -> Response:
                     headers={"Content-Disposition": f'attachment; filename="regression-{data["name"]}.json"'})
 
 
-def _pytest_file(data: dict) -> str:
-    return f'''"""CounterProof regression test (generated).
+_PYTEST_TEMPLATE = '''"""CounterProof regression test (generated).
 
-Replays the counterexample {data["source"]["candidate_digest"]}
-(original outcome: {data["source"]["original_outcome"]}, evidence {data["source"]["evidence_digest"]})
-and asserts: {data["expectation"]}.
+Replays the counterexample __CANDIDATE__
+(original outcome: __ORIGINAL_OUTCOME__ against __ORIGINAL__, evidence __EVIDENCE__)
+and asserts: __EXPECTATION__.
+
+Every test really executes the adapter in a fresh child process from the committed initial
+state and runs the deterministic checker over the new ledger; none asserts a recorded verdict.
+
+- test___NAME___does_not_regress: the version under test (default __TARGET__, override with
+  COUNTERPROOF_TARGET) completes the run without violating __RULE__.
+- test___NAME___original_version_still_fails: the original version (__ORIGINAL__), when it is
+  installed, still violates __RULE__ on the same replay, so the test discriminates.
+- Live-model targets: the model's recorded proposals from the original evaluation are served
+  back by a scripted broker (offline, deterministic). That tests what the agent's code does with
+  those proposals, not what a model would propose today. test___NAME___live_model_k_of_n asks
+  the real model (k-of-n) and is skipped unless COUNTERPROOF_REGRESSION_LIVE=1 and the
+  provider's API key are set. It fails on any live run that violates __RULE__ and on any real
+  crash or timeout. A run the provider ended by rejecting the model's generation (Groq rejects a
+  call to a tool the agent does not offer with HTTP 400 tool_use_failed; the runner records
+  target_crash) is neither: the agent never saw that proposal and nothing from it reached the
+  market. Such runs are reported in a warning; if no run completed, the test is skipped as not
+  tested. A provider outage (runner_failure) is skipped too: it is not evidence either way.
 
 Run from the CounterProof backend:  uv run pytest path/to/this_file.py
-Set COUNTERPROOF_TARGET to the adapter key under test (default: {data["last_result"]["target"]}).
 """
 
 import json
 import os
+import warnings
 
-from counterproof.regression import replay_regression
+import pytest
 
-REGRESSION = json.loads(r"""{json.dumps(data)}""")
+from counterproof.regression import LIVE_ENV, replay_regression, replay_regression_live
+from counterproof.targets import registry
+
+REGRESSION = json.loads(r"""__JSON__""")
+RULE = REGRESSION["rule"]["id"]
+TARGET = os.environ.get("COUNTERPROOF_TARGET", REGRESSION["last_result"]["target"])
+ORIGINAL = (REGRESSION.get("source") or {}).get("target")
+REQUIRES_MODEL = bool((REGRESSION.get("target") or {}).get("requires_model"))
 
 
-def test_{data["rule"]["template"].replace(".", "_")}_does_not_regress():
-    target = os.environ.get("COUNTERPROOF_TARGET", "{data["last_result"]["target"]}")
-    result = replay_regression(REGRESSION, target)
-    assert result["run_outcome"] == "completed", result
-    assert REGRESSION["rule"]["id"] not in result["rules_violated"], result["violations"]
+def test___NAME___does_not_regress():
+    result = replay_regression(REGRESSION, TARGET)
+    assert result["run_outcome"] == "completed", (result["run_outcome"], result["run_reason"])
+    assert RULE not in result["rules_violated"], result["violations"]
+
+
+def test___NAME___original_version_still_fails():
+    if not ORIGINAL or ORIGINAL == TARGET or ORIGINAL not in registry.ADAPTERS:
+        pytest.skip(f"original version {ORIGINAL} is not installed or is the version under test")
+    result = replay_regression(REGRESSION, ORIGINAL)
+    assert RULE in result["rules_violated"], (result["run_outcome"], result["run_reason"], result["violations"])
+
+
+@pytest.mark.skipif(os.environ.get(LIVE_ENV) != "1",
+                    reason="live-model replay is opt-in: set COUNTERPROOF_REGRESSION_LIVE=1 and the provider's API key")
+def test___NAME___live_model_k_of_n():
+    if not REQUIRES_MODEL:
+        pytest.skip("deterministic target: the scripted replay above is the whole regression")
+    result = replay_regression_live(REGRESSION, TARGET)
+    if result["outcome"] == "runner_failure":
+        pytest.skip(f"model provider unavailable, not evidence either way: {result['runs'][-1]['run_reason']}")
+    assert result["violations"] == 0, result  # a live run broke the rule
+    assert result["other_abnormal_runs"] == 0, result  # a real crash or timeout
+    rejected = sorted({n for r in result["runs"] for n in r["provider_rejected_tools"]})
+    if result["completed_runs"] == 0:
+        pytest.skip(f"not tested: all {result['replays']} live runs ended when the provider rejected the model's "
+                    f"generation (tools {rejected}); the agent never saw those proposals")
+    if result["provider_rejected_runs"]:
+        warnings.warn(f"{result['provider_rejected_runs']} of {result['replays']} live runs ended when the provider "
+                      f"rejected the model's generation (tools {rejected}); the rule held in every run, and the "
+                      f"agent's own guard was exercised in the {result['completed_runs']} completed run(s) only")
 '''
+
+
+def _pytest_file(data: dict) -> str:
+    src = data.get("source") or {}
+    fields = {
+        "__CANDIDATE__": str(src.get("candidate_digest")),
+        "__ORIGINAL_OUTCOME__": str(src.get("original_outcome")),
+        "__ORIGINAL__": str(src.get("target") or "the original version"),
+        "__EVIDENCE__": str(src.get("evidence_digest")),
+        "__EXPECTATION__": str(data["expectation"]).replace('"""', "'''"),
+        "__TARGET__": str(data["last_result"]["target"]),
+        "__RULE__": str(data["rule"]["id"]),
+        "__NAME__": "".join(ch if ch.isalnum() else "_" for ch in data["rule"]["template"]),
+    }
+    out = _PYTEST_TEMPLATE
+    for k, v in fields.items():
+        out = out.replace(k, v)
+    return out.replace("__JSON__", json.dumps(data))
 
 
 def main() -> None:

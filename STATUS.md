@@ -1,18 +1,39 @@
 # Status
 
-_Last updated: 2026-10-11. Hackathon submissions close 2026-10-14 03:59 UTC (13 Oct 23:59 US
-Eastern), per hackathon.monad.xyz. 13 Oct is reserved for verification, recording and
-submission._
+_Last updated: 2026-10-13 (remediation branch `remediation/judge-review`). Submission cut-off:
+the portal said 2026-10-14 03:59 UTC on 2026-10-06; on 2026-10-13 the public pages only say
+"13 Oct" and the portal needs sign-in, so confirm it there._
 
 ## Current stage
 
 **Live on Monad testnet since 2026-10-11.** Contract
 [`0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4`](https://testnet.monadscan.com/address/0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4)
 (source verified on Sourcify: runtime match), three challenges run end to end on testnet,
-including a **verified violation by the independent live-model agent** that was settled and
-recorded in the official ERC-8004 ReputationRegistry. Source:
+including a **verified violation by the live-model agent** (our tool loop, third-party hosted
+model, no planted defects) that was settled and recorded in the official ERC-8004
+ReputationRegistry. Source:
 https://github.com/professor-200629/counterproof. Read-only console with the recorded testnet
 run: https://counterproof.vercel.app.
+
+## Remediation (2026-10-12/13): what changed and how it was checked
+
+Full write-up: [docs/REMEDIATION_REPORT.md](docs/REMEDIATION_REPORT.md); living notes:
+[docs/REMEDIATION_STATE.md](docs/REMEDIATION_STATE.md).
+
+| Area | Now | Evidence |
+|---|---|---|
+| Live-model attestation trust gap | The signer loads the committed candidate by its on-chain digest and re-runs the spec's k-of-n itself (own broker, own checker) before signing; it signs the digest of its own bundle. Forged-but-consistent worker evidence is refused. | `tests/test_signer_verification.py` (forged-evidence reproduction first passes the old validator, then is refused); fork rehearsal with real Groq: signer 3 of 3 (`docs/evidence/fork-rehearsal-llm-20261013-100537.json`) |
+| Attestation renewal | Same verified submission only; chain + stored own evidence re-checked; expiry capped at the settlement deadline; refused after settle/refund/deadline; audit history; per-challenge lock. | controlled-clock tests; anvil test that the contract accepts the renewed signature and rejects the expired one |
+| Judge/demo safety | Mutations need an operator bearer or a judge cookie session (+ CSRF + Origin); server-side budget caps, queue and token ceilings, operator stop; transaction receipts bound to the configured contract. | `tests/test_auth_and_limits.py` (see the report for the final count) |
+| Repaired live-model agent | `llm-purchasing-agent@0.2.0`: privileged tools not offered and refused in the dispatcher; budget/merchant/duplicate/revocation guards in code; blocked proposals recorded apart from ledger effects; model proposals observed by the evaluator's broker. | live Groq replay of the recorded attack: R5 held 3 of 3, order paid; ordinary purchase 3 of 3; model proposed no privileged tool, so the in-code block is shown by scripted tests (`docs/evidence/repair-llm-0.2.0-20261013-092750.json`) |
+| Regression export | Live-model regressions keep config/limits/policy and recorded model proposals; the exported pytest re-executes the agent (scripted model) and fails on 0.1.1, passes on 0.2.0. | `docs/evidence/test_regression_llm_0_2_0_20261013_092750.py`: 2 passed, live variant opt-in |
+| Judge-facing console | First screen leads with the live-model finding; same-family comparisons only; per-replay witnesses; MON vs SYN legend; model proposals shown apart from enforcement; 375 px checked. | web tests; browser check |
+| Re-checking recorded evidence | `scripts/verify_evidence.py [--url ...] [--chain]`. | all checks passed against the repo snapshot, the hosted site and Monad testnet |
+| External agent | Pending: needs container isolation; Docker does not start on this machine. AP2 shopping agent pinned as first candidate. | `docs/EXTERNAL_AGENT_PLAN.md` |
+
+Digest note: adding the 0.2.0 adapter added one row to `runner/host.py`, which is part of every
+adapter's artifact digest. The historical 2026-10-11 specs therefore re-run only from git tag
+`testnet-2026-10-11` (= `51c0832`); recorded evidence re-checks from any commit.
 
 ## Monad testnet run (2026-10-11)
 
@@ -116,7 +137,7 @@ placeholder until the window is visible (React's reveal waits for an animation f
 3. **OpenZeppelin submodule pinned to master in the first commit.** Fixed; pins verified by
    `contracts/script/check-release.sh` and `DependencyPins.t.sol`.
 
-## Independent live-model evaluation (gpt-oss-120b, 2026-10-06)
+## Live-model evaluation (gpt-oss-120b, 2026-10-06; team-written agent, third-party model)
 
 Recorded in [docs/evidence/INDEPENDENT_EVALUATION.md](docs/evidence/INDEPENDENT_EVALUATION.md):
 sequence explorer 5/5 and retry/replay 5/5 found no violation within budget; the
@@ -128,14 +149,21 @@ model's daily quota ran out before they could be replayed.
 
 ## Not yet verified
 
-- **10 MON reserve rule**: value-sending transactions from accounts holding < 10 MON succeeded on
-  testnet when spaced as "emptying" transactions; the revert path itself was never triggered.
-- **Container isolation**: implemented, untested (Docker engine does not start here).
-- **Web console on Monad testnet** with a real browser wallet (verified on local anvil with the dev wallet).
+- **External agent:** none evaluated (container isolation unavailable here). Plan: docs/EXTERNAL_AGENT_PLAN.md.
+- **Independent human reproduction:** none yet. Kit: docs/REPRODUCE.md.
+- **New signer path on Monad testnet itself:** exercised on a local fork of Monad testnet and on
+  local anvil; no new testnet transaction was made during the remediation.
+- **Container isolation:** implemented, untested (Docker engine does not start here).
+- **Browser-wallet flow on testnet:** verified only on local anvil with the dev wallet.
+- **10 MON reserve rule:** value transfers below 10 MON succeeded when spaced as "emptying"
+  transactions; the revert path was never triggered.
+- **Linux/macOS:** not tested.
 
 ## Next tasks
 
-1. Demo video (<= 3 min) and pitch video (<= 2 min) - the owner records them
-   (docs/DEMO_SCRIPT.md, docs/PITCH.md).
-2. Submission on the hackathon platform (owner): docs/SUBMISSION.md has the text and links.
-3. Optional: the browser-wallet flow on testnet (`dev.py testnet --data data/e2e-testnet-20261011-222815`).
+1. Owner: confirm the submission cut-off and video limits in the portal; record the demo and pitch
+   (docs/DEMO_SCRIPT.md, docs/PITCH.md); submit (docs/SUBMISSION.md).
+2. Owner decision: publish the remediation branch (push / merge to main) and redeploy the hosted
+   evidence explorer (commands in docs/REMEDIATION_REPORT.md).
+3. Optional: a fresh testnet challenge against `llm-purchasing-agent@0.2.0` (needs testnet MON and
+   explicit approval).

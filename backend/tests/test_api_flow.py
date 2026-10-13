@@ -3,21 +3,23 @@
 import time
 
 import pytest
-from conftest import ALL_RULES, BUDGET_ATTACK, PUBLISHER, make_candidate
+from conftest import ALL_RULES, BUDGET_ATTACK, JUDGE_PASSCODE, OPERATOR_HEADERS, OPERATOR_TOKEN, PUBLISHER, make_candidate
 from fastapi.testclient import TestClient
 
 FAKE_SECRETS = {"GROQ_API_KEY": "gsk_" + "s3cr3t" * 8, "EVALUATOR_PRIVATE_KEY": "0x" + "ab" * 32,
-                "COUNTERPROOF_SIGNER_TOKEN": "signer-token-" + "z" * 20}
+                "COUNTERPROOF_SIGNER_TOKEN": "signer-token-" + "z" * 20,
+                "COUNTERPROOF_OPERATOR_TOKEN": OPERATOR_TOKEN, "COUNTERPROOF_JUDGE_PASSCODE": JUDGE_PASSCODE}
 
 
 @pytest.fixture
 def client(monkeypatch):
+    """The API as the operator (bearer token), as scripts call it."""
     for k, v in FAKE_SECRETS.items():
         monkeypatch.setenv(k, v)
     from counterproof import api
 
     api._local.conn = None
-    with TestClient(api.app) as c:
+    with TestClient(api.app, headers=OPERATOR_HEADERS) as c:
         yield c
     api._local.conn = None
 

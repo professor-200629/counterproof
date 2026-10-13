@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { useConfig } from "@/lib/queries";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
+import { JudgeSession } from "./judge-session";
 import { NetworkBadge } from "./network-badge";
 import { SnapshotBanner } from "./snapshot-banner";
 import { WalletButton, WalletNotices } from "./wallet-button";
@@ -148,7 +149,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <span className="hidden sm:inline">Recorded snapshot - read-only</span>
                   </Badge>
                 ) : (
-                  <WalletButton notices="separate" />
+                  <>
+                    <JudgeSession />
+                    <WalletButton notices="separate" />
+                  </>
                 )}
               </div>
             </div>

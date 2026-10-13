@@ -11,11 +11,11 @@ import { plural } from "@/lib/format";
 export interface ActionSequenceProps {
   /** Actions as replayed against the original version (from its evidence bundle / candidate). */
   before: CandidateAction[] | null;
-  /** Actions as replayed against the new version (from the regression's evidence bundle). */
+  /** Actions as replayed against the other version (from the regression's evidence bundle). */
   after: CandidateAction[] | null;
   /** The original candidate's digest. */
   candidateDigest: string | null;
-  /** The regression's candidate digest (re-bound to the new version's spec). */
+  /** The regression's candidate digest (re-bound to the replayed version's spec). */
   afterCandidateDigest?: string | null;
   /** The spec's synthetic initial state, to name products and merchants in plain words. */
   initialState?: Pick<InitialState, "products" | "merchants" | "currency"> | null;
@@ -58,7 +58,7 @@ export function ActionSequence({ before, after, candidateDigest, afterCandidateD
                   </Badge>
                 )
               ) : (
-                <Badge tone="warn">Not replayed on the new version yet</Badge>
+                <Badge tone="warn">Not replayed against another version</Badge>
               )}
               <span className="text-xs text-muted">
                 {before.length} {plural(before.length, "action")}
@@ -71,8 +71,8 @@ export function ActionSequence({ before, after, candidateDigest, afterCandidateD
             />
             {compared && !identical && after ? (
               <>
-                <p className="text-xs font-medium text-bad">Replayed against the new version:</p>
-                <ActionList {...world} actions={after} label="Action sequence replayed against the new version" />
+                <p className="text-xs font-medium text-bad">Replayed against the other version:</p>
+                <ActionList {...world} actions={after} label="Action sequence replayed against the other version" />
               </>
             ) : null}
             <div className="space-y-1 text-xs text-muted">
@@ -91,7 +91,7 @@ export function ActionSequence({ before, after, candidateDigest, afterCandidateD
                       (<Digest value={afterCandidateDigest} label="regression candidate digest" copy={false} />)
                     </>
                   ) : null}{" "}
-                  differs because the same actions are re-bound to the new version&apos;s spec.
+                  differs because the same actions are re-bound to the replayed version&apos;s spec.
                 </p>
               ) : null}
             </div>

@@ -193,12 +193,14 @@ const DOMAIN_OVERRIDES: Partial<Record<StatusDomain, Record<string, Partial<Stat
   },
   regression: {
     not_reproduced: {
-      label: "Not reproduced on new version",
-      description: "The same action sequence replayed against the new version did not violate the rule.",
+      // Neutral about WHICH version was replayed: whether it is a repair (same adapter, another
+      // version), the original re-run or another agent family is said next to the badge.
+      label: "Not reproduced on replay",
+      description: "The same action sequence replayed against the chosen version did not violate the rule.",
     },
     verified_violation: {
-      label: "Still violates",
-      description: "The same action sequence still violates the rule on the new version.",
+      label: "Violated on replay",
+      description: "The same action sequence violated the rule again on the replayed version.",
     },
   },
   job: {
@@ -282,6 +284,11 @@ export function isRunActive(status: string | null | undefined): boolean {
 
 export function isEvaluationActive(status: string | null | undefined): boolean {
   return !!status && (ACTIVE_EVALUATION_STATUSES as readonly string[]).includes(status);
+}
+
+/** A background job that is still queued or running (e.g. a request to the evaluator's signer). */
+export function isJobActive(job: { status: string } | null | undefined): boolean {
+  return !!job && (job.status === "queued" || job.status === "running");
 }
 
 export function isRegressionActive(status: string | null | undefined): boolean {

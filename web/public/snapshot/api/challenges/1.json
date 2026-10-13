@@ -258,7 +258,7 @@
   ],
   "provenance": "Written for the demonstration with planted defects (see module docstring).",
   "key": "ref-purchasing-agent@1.0.0",
-  "artifact_digest": "sha256:b5d478ec5b85954cf157210f72f9323f6e463be38c88948ee3eb75e5bab419c4",
+  "artifact_digest": "sha256:3ee59cb1e600d335d3401157e6a771287afb254096e060146f6fd40fddbae60f",
   "hosted": true
  },
  "runs": [
@@ -1261,6 +1261,7 @@
    },
    "created_at": 1791737917,
    "finished_at": 1791737918,
+   "model_proposals_digest": null,
    "challenger": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
    "recipient": "0x6bb82dec23d196ad5859932f33c1af293a02eb42",
    "commit_tx": "0xb8c61d5cb470895b7bc40985a7c88d90f77326df59b1eae23e479a2e13f5572c",
@@ -1336,7 +1337,10 @@
   "signature": "0xa0f8dd1c4e1bfa5b843bbecd2f830420926a2a6053ba834deb90af0d0315ed19574a3f10234f2d138d0548eaf0c53c1bca0574630c8638b1cf803c01e46550251b",
   "signer": "0x8e1b144e459156c674e4a43b86aea8a0cb42f72b",
   "expiry": 1791741506,
-  "created_at": 1791737922
+  "created_at": 1791737922,
+  "evidence_digest": null,
+  "verification": null,
+  "updated_at": null
  },
  "transactions": [
   {

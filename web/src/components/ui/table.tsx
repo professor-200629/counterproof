@@ -12,7 +12,7 @@ export interface TableProps extends HTMLAttributes<HTMLTableElement> {
 /** Horizontally scrollable table wrapper (never scrolls the page sideways). */
 export function Table({ caption, showCaption, dense, className, children, ...rest }: TableProps) {
   return (
-    <div className="w-full min-w-0 overflow-x-auto rounded-lg border border-line bg-surface">
+    <div className="relative w-full min-w-0 overflow-x-auto rounded-lg border border-line bg-surface">
       <table
         className={cn("w-full border-collapse text-left text-sm", dense && "[&_td]:py-1.5 [&_th]:py-1.5", className)}
         {...rest}

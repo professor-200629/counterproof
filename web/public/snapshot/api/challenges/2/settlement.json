@@ -24,5 +24,6 @@
   "spec_digest": "sha256:e44f86d7af72f8678888754314177c52148ffd0b8a1ea61d7beb6824578693a0",
   "settled_submission": "0x0000000000000000000000000000000000000000000000000000000000000000"
  },
- "explorer_template": "https://testnet.monadscan.com/tx/{hash}"
+ "explorer_template": "https://testnet.monadscan.com/tx/{hash}",
+ "attestation_job": null
 }

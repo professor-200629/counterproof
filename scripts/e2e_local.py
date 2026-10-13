@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import httpx  # noqa: E402
 
 from counterproof import devchain  # noqa: E402
+from counterproof.limits import FORWARDED_SETTINGS  # noqa: E402
 
 PY = str(ROOT / "backend" / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python"))
 K = devchain.ANVIL_KEYS
@@ -50,10 +51,13 @@ class Stack:
     def __init__(self, anvil_url: str, contract: str, data_dir: Path, network: str = "anvil-local",
                  evaluator_key: str = K["evaluator"], challenger_key: str = K["challenger"],
                  provider_env: dict | None = None):
-        """provider_env: live-model provider settings and key, given to the API and worker only."""
+        """provider_env: live-model provider settings and key, given to the API, the worker and the
+        signer (which replays every submission itself before it signs). Never to targets."""
         self.api_port, self.signer_port = devchain.free_port(), devchain.free_port()
         token = secrets.token_hex(16)
-        common = {k: v for k, v in os.environ.items() if not any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET"))}
+        common = {k: v for k, v in os.environ.items()
+                  if not any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET", "PRIVATE", "PASSWORD", "PASSCODE"))}
+        common |= {k: v for k, v in os.environ.items() if k in FORWARDED_SETTINGS}  # limits (not secrets)
         common |= {"COUNTERPROOF_DATA_DIR": str(data_dir), "COUNTERPROOF_NETWORK": network,
                    "COUNTERPROOF_RPC_URL": anvil_url, "COUNTERPROOF_CONTRACT": contract,
                    "COUNTERPROOF_EVALUATOR_ADDRESS": devchain.address_of(evaluator_key).lower(),
@@ -65,14 +69,16 @@ class Stack:
         logs.mkdir(parents=True, exist_ok=True)
         self.procs = []
         for name, module, extra in (
-            ("signer", "counterproof.signer", {"EVALUATOR_PRIVATE_KEY": evaluator_key, "COUNTERPROOF_SIGNER_PORT": str(self.signer_port)}),
-            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key} | (provider_env or {})),
+            ("signer", "counterproof.signer", {"EVALUATOR_PRIVATE_KEY": evaluator_key, "COUNTERPROOF_SIGNER_PORT": str(self.signer_port)}
+             | (provider_env or {})),
+            ("api", "counterproof.api", {"COUNTERPROOF_CHALLENGER_PRIVATE_KEY": challenger_key} | (provider_env or {})
+             | self._operator_env()),
             ("worker", "counterproof.worker", dict(provider_env or {})),
         ):
             f = open(logs / f"{name}.log", "wb")
             self.procs.append(subprocess.Popen([PY, "-m", module], cwd=str(ROOT / "backend"), env=common | extra,
                                                stdout=f, stderr=subprocess.STDOUT))
-        self.api = httpx.Client(base_url=f"http://127.0.0.1:{self.api_port}", timeout=60)
+        self.api = httpx.Client(base_url=f"http://127.0.0.1:{self.api_port}", timeout=60, headers=self.operator_headers)
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             try:
@@ -90,6 +96,19 @@ class Stack:
                 time.sleep(0.5)
         else:
             raise RuntimeError("signer did not start; see logs in " + str(logs))
+
+    # --- operator authentication (backend/counterproof/auth.py) --------------------------
+    # The API refuses every change without credentials. This stack generates its own operator
+    # token, gives it to the API process only, and its client sends it as a bearer token.
+    def _operator_env(self) -> dict:
+        if not getattr(self, "operator_token", None):
+            self.operator_token = secrets.token_urlsafe(32)
+        return {"COUNTERPROOF_OPERATOR_TOKEN": self.operator_token}
+
+    @property
+    def operator_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._operator_env()['COUNTERPROOF_OPERATOR_TOKEN']}"}
+    # --------------------------------------------------------------------------------------
 
     def close(self) -> None:
         for p in self.procs:
@@ -119,6 +138,22 @@ class Stack:
                 return v
             time.sleep(0.5)
         raise TimeoutError(f"timed out waiting for {what or path}")
+
+    def wait_attestation(self, cid: int, timeout: float = 300) -> dict:
+        """The signer replays the committed candidate itself before it signs (minutes for a live
+        model), so the attestation arrives asynchronously: poll the settlement endpoint until it
+        is there, or until the attestation job reports that the signer refused or failed."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            v = self.get(f"/api/challenges/{cid}/settlement")
+            if v["attestation"] is not None:
+                return v["attestation"]
+            job = v.get("attestation_job") or {}
+            result = job.get("result") or {}
+            if job.get("status") in ("done", "failed", "cancelled") and result.get("status") != "signed":
+                raise RuntimeError(f"no attestation: job {job.get('status')}, signer said {json.dumps(result)[:600]}")
+            time.sleep(1.0)
+        raise TimeoutError(f"timed out after {timeout:.0f} s waiting for the signer's attestation")
 
 
 def chain_now(w3) -> int:
@@ -187,13 +222,19 @@ def main() -> int:
             assert ev["outcome"] == "verified_violation"
             dup = s.post(f"/api/candidates/{cands['R1']['id']}/submit")
             step("duplicate-submit", same_evaluation=dup["id"] == ev["id"], duplicate=dup.get("duplicate"))
-            sett = s.wait(f"/api/challenges/{cid}/settlement", lambda v: v["attestation"] is not None, timeout=120, what="attestation")
-            att = sett["attestation"]
-            step("attest", signer=att["signer"], expiry=att["expiry"], signature=att["signature"][:20] + "...")
+            att = s.wait_attestation(cid, timeout=180)
             m = att["typed_data"]["message"]
-            assert m["evidenceDigest"] == "0x" + ev["evidence_digest"][7:], (m["evidenceDigest"], ev["evidence_digest"])
-            bundle = s.get(f"/api/evidence/{ev['evidence_digest']}")
-            assert bundle["evidence_digest"] == ev["evidence_digest"]
+            # The signer signs the digest of its OWN verification bundle (its fresh replays of the
+            # committed candidate), not the worker's.
+            own = att["evidence_digest"]
+            assert own and m["evidenceDigest"] == "0x" + own[7:], (m["evidenceDigest"], own)
+            bundle = s.get(f"/api/evidence/{own}")
+            assert bundle["evidence_digest"] == own and bundle["verdict"]["outcome"] == "verified_violation", bundle["verdict"]
+            assert bundle["submission"]["submission_id"] == ev["submission_id"]
+            v = att["verification"] or {}
+            step("attest", signer=att["signer"], expiry=att["expiry"], signature=att["signature"][:20] + "...",
+                 signer_evidence=own, signer_replays=f"{v.get('violated')} of {v.get('replays')} (required {v.get('required')})",
+                 worker_evidence=ev["evidence_digest"])
             tup = (int(m["challengeId"]), bytes.fromhex(m["specDigest"][2:]), bytes.fromhex(m["submissionId"][2:]),
                    bytes.fromhex(m["candidateDigest"][2:]), bytes.fromhex(m["evidenceDigest"][2:]),
                    w3.to_checksum_address(m["challenger"]), w3.to_checksum_address(m["recipient"]), int(m["verdict"]), int(m["expiry"]))

@@ -1,0 +1,20 @@
+{
+ "challenge": {
+  "id": 4,
+  "spec_digest": "sha256:b25015049993c21b152aed088dd59a0eb3a5c591ef90f196bf74d3f78ac8e44d",
+  "status": "offchain",
+  "network": "offchain",
+  "chain_id": null,
+  "contract": null,
+  "onchain_id": null,
+  "fund_tx": null,
+  "reward_wei": "0",
+  "note": null,
+  "created_at": 1791864010,
+  "updated_at": 1791864010
+ },
+ "attestation": null,
+ "onchain": null,
+ "explorer_template": "https://testnet.monadscan.com/tx/{hash}",
+ "attestation_job": null
+}

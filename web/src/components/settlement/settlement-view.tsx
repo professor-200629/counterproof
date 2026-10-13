@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, Download, FileSearch, Hourglass, PenLine, Receipt, Undo2 } from "lucide-react";
+import { CircleCheck, Download, FileSearch, Hourglass, Receipt, Undo2 } from "lucide-react";
 import type { Hex } from "viem";
 import { ActivityList, ActivityRef } from "@/components/activity-list";
 import { FundingPanel } from "@/components/create/funding-panel";
@@ -9,13 +9,13 @@ import { LocalChainNotice } from "@/components/tx-status";
 import { TrustStatement } from "@/components/truth";
 import { Address } from "@/components/ui/address";
 import { Breadcrumbs, challengeCrumbs } from "@/components/ui/breadcrumbs";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/card";
 import { Digest } from "@/components/ui/digest";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { PageHeader, Section } from "@/components/ui/section";
 import { KeyValueList } from "@/components/ui/stat";
-import { ErrorState, QueryState } from "@/components/ui/states";
+import { QueryState } from "@/components/ui/states";
 import { TextLink } from "@/components/ui/text-link";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Countdown, DateTime, TimeAgo, useNow } from "@/components/ui/time";
@@ -30,18 +30,21 @@ import {
   type SettlementAttestation,
 } from "@/lib/api";
 import { formatWei, toChecksumAddress, txNetworkPhrase } from "@/lib/chain";
-import { useAttest, useChallenge, useConfig, useSettlement } from "@/lib/queries";
+import { useChallenge, useConfig, useRefreshWhenAttestationJobEnds, useSettlement } from "@/lib/queries";
 import { isChallengeActive, isEvaluationActive } from "@/lib/status";
 import { supportedChainIdFor } from "@/lib/wagmi";
 import { RefundAction, SettleAction, WithdrawAction, type ChainTarget } from "./actions";
 import { AttestationDetails } from "./attestation-details";
+import { AttestationRequestButton, SignerJobStatus, signerReplayNote } from "./attestation-request";
 import { Erc8004Panel } from "./erc8004-panel";
 import {
+  canRenewAttestation,
   commitTxFor,
   confirmedTx,
   currentAttestation,
   detailString,
   failedAttempts,
+  isAttestationJobActive,
   isPayableVerdict,
   latestAttestationNote,
   pickSettlementEvaluation,
@@ -153,6 +156,7 @@ function OnchainSettlement({ view, settlement, config }: OnchainProps) {
   const settledTx = confirmedTx(view.transactions, "settle");
   const refundTx = confirmedTx(view.transactions, "refund");
   const activity = settlementActivity(view.activity);
+  useRefreshWhenAttestationJobEnds(view.id, settlement.attestation_job);
 
   return (
     <div className="space-y-8">
@@ -283,8 +287,14 @@ function AnswerCallout({
   if (!evaluation) next = "No submission has been evaluated yet.";
   else if (isEvaluationActive(evaluation.status)) next = "The evaluator is replaying the submission; no verdict yet.";
   else if (!isPayableVerdict(evaluation)) next = "The latest evaluated submission did not produce a payable verdict.";
-  else if (!attestation) next = "A verified violation is waiting for the declared evaluator's signature.";
-  else if (nowSec !== null && nowSec > attestation.expiry) next = "The attestation expired before anyone relayed it.";
+  else if (!attestation)
+    next = isAttestationJobActive(settlement.attestation_job)
+      ? "A verified violation is waiting for the declared evaluator's signature; its signer is replaying the committed candidate itself first."
+      : "A verified violation is waiting for the declared evaluator's signature.";
+  else if (nowSec !== null && nowSec > attestation.expiry)
+    next = !SNAPSHOT_MODE && canRenewAttestation(view, attestation, settlement.onchain, nowSec)
+      ? "The attestation expired before anyone relayed it. The settlement window is still open, so it can be renewed below."
+      : "The attestation expired before anyone relayed it.";
   else
     next = SNAPSHOT_MODE
       ? "The attestation was signed. Anyone could relay it to the contract; this read-only snapshot cannot. The reward goes to the bound recipient."
@@ -589,6 +599,10 @@ function AttestStep({
   nowSec: number | null;
 }) {
   const payable = isPayableVerdict(evaluation);
+  const job = settlement.attestation_job ?? null;
+  const liveModel = view.spec.target.determinism === "stochastic";
+  // Renewal is a live action: the read-only snapshot shows the recorded expiry, not an offer.
+  const renewable = !SNAPSHOT_MODE && canRenewAttestation(view, attestation, settlement.onchain, nowSec);
   let state: TimelineState = "upcoming";
   let stateLabel: string | undefined;
   let summary = "Signed only for a verified violation that is eligible for the reward.";
@@ -601,14 +615,22 @@ function AttestStep({
     } else if (expired && view.status === "funded") {
       state = "warning";
       stateLabel = "Expired";
-      summary = "Signed by the declared evaluator, but the attestation expired before it was relayed.";
+      summary = renewable
+        ? "Signed by the declared evaluator, but the attestation expired before it was relayed. The settlement window is still open, so it can be renewed."
+        : "Signed by the declared evaluator, but the attestation expired before it was relayed.";
     } else {
       state = "complete";
-      summary = "Signed by the declared evaluator over the submission, candidate and evidence digests.";
+      summary = attestation.evidence_digest
+        ? "Signed by the declared evaluator after its own replay of the committed candidate, over the submission, candidate and its own evidence digests."
+        : "Signed by the declared evaluator over the submission, candidate and evidence digests.";
     }
   } else if (evaluation && payable && view.status === "funded") {
     state = "current";
-    summary = SNAPSHOT_MODE ? "Awaiting the evaluator's signature when recorded." : "Waiting for the declared evaluator's signer.";
+    summary = SNAPSHOT_MODE
+      ? "Awaiting the evaluator's signature when recorded."
+      : isAttestationJobActive(job)
+        ? "The declared evaluator's signer is replaying the committed candidate itself before it signs."
+        : "Waiting for the declared evaluator's signer.";
   } else if (evaluation && finishedSummary(evaluation) && !payable) {
     state = "skipped";
     summary = "No payable verdict, so there is nothing to attest.";
@@ -616,15 +638,31 @@ function AttestStep({
   return (
     <TimelineStep index={4} id="step-attested" title="Attested" state={state} stateLabel={stateLabel} summary={summary}>
       {attestation ? (
-        <AttestationDetails
-          attestation={attestation}
-          view={view}
-          evaluation={evaluation}
-          onchain={settlement.onchain}
-          configEvaluator={config?.evaluator_address}
-        />
+        <div className="space-y-4">
+          <AttestationDetails
+            attestation={attestation}
+            view={view}
+            evaluation={evaluation}
+            onchain={settlement.onchain}
+            configEvaluator={config?.evaluator_address}
+          />
+          {renewable && evaluation ? (
+            <section aria-labelledby="renew-heading" className="space-y-3 border-t border-line pt-4">
+              <h4 id="renew-heading" className="text-sm font-semibold text-fg">
+                Renew the attestation
+              </h4>
+              <p className="text-sm text-muted">
+                The challenge is still funded and its settlement deadline has not passed. Renewing asks the signer to re-read the chain,
+                re-check its stored evidence and sign the same message again with only a later expiry (never past the settlement
+                deadline). It does not replay again.
+              </p>
+              <SignerJobStatus job={job} liveModel={liveModel} />
+              <AttestationRequestButton challengeId={view.id} evaluationId={evaluation.id} job={job} renew liveModel={liveModel} />
+            </section>
+          ) : null}
+        </div>
       ) : state === "current" && evaluation ? (
-        <RequestAttestation view={view} evaluation={evaluation} config={config} />
+        <RequestAttestation view={view} evaluation={evaluation} config={config} job={job} liveModel={liveModel} />
       ) : (
         <p className="text-sm text-muted">
           Declared evaluator: <Address value={view.spec.evaluator.address} label="declared evaluator" />{" "}
@@ -635,40 +673,40 @@ function AttestStep({
   );
 }
 
-function RequestAttestation({ view, evaluation, config }: { view: ChallengeView; evaluation: Evaluation; config: AppConfig | null }) {
-  const attest = useAttest(view.id);
+function RequestAttestation({
+  view,
+  evaluation,
+  config,
+  job,
+  liveModel,
+}: {
+  view: ChallengeView;
+  evaluation: Evaluation;
+  config: AppConfig | null;
+  job: Settlement["attestation_job"];
+  liveModel: boolean;
+}) {
   const note = latestAttestationNote(view.activity, evaluation.id);
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        The evaluator&apos;s signer re-checks the evidence bundle and the on-chain commitment before it signs, and refuses if
-        anything differs. Declared evaluator: <Address value={view.spec.evaluator.address} label="declared evaluator" />
+        The evaluator&apos;s signer does not sign the worker&apos;s evidence. It reads the challenge and the commitment from the chain,
+        replays the committed candidate itself and signs only if its own replays verify the violation, binding its own evidence
+        bundle. {SNAPSHOT_MODE ? null : signerReplayNote(liveModel)} Declared evaluator:{" "}
+        <Address value={view.spec.evaluator.address} label="declared evaluator" />
       </p>
       {config && !config.signer.reachable && !SNAPSHOT_MODE ? (
         <Callout tone="warn" title="Signer not reachable" role="status">
           /api/config reports the signer service at {config.signer.url} as unreachable, so a request will fail until it is running.
         </Callout>
       ) : null}
+      <SignerJobStatus job={job} liveModel={liveModel} />
       {note ? (
         <p className="text-xs text-warn">
-          Last attempt (<TimeAgo ts={note.created_at} />): {note.message}
+          Last note (<TimeAgo ts={note.created_at} />): {note.message}
         </p>
       ) : null}
-      {SNAPSHOT_MODE ? (
-        <ReadOnlyNote action="Asking the evaluator to sign an attestation" />
-      ) : (
-        <Button
-          variant="primary"
-          icon={<PenLine />}
-          onClick={() => attest.mutate(evaluation.id)}
-          busy={attest.isPending}
-          busyLabel="Asking the signer"
-        >
-          Ask the evaluator to sign
-        </Button>
-      )}
-      {attest.isError ? <ErrorState error={attest.error} title="The signer did not attest" compact /> : null}
-      {attest.isSuccess ? <p className="text-sm text-ok">Signed. The attestation is shown here once the page refreshes its data.</p> : null}
+      <AttestationRequestButton challengeId={view.id} evaluationId={evaluation.id} job={job} liveModel={liveModel} />
     </div>
   );
 }

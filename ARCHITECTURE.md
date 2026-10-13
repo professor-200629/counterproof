@@ -19,7 +19,8 @@ This document describes the components, the data flow and the trust boundaries.
    │                                          └─ one adapter from a closed registry
    ▼
  Signer (separate process, the only holder of the evaluator key)
-   re-verifies evidence, replays once itself, reads the chain, signs EIP-712
+   reads the chain, loads the committed candidate by its on-chain digest, re-runs the
+   spec's k-of-n itself (own model broker, own checker), signs EIP-712 over ITS OWN evidence
 ```
 
 | Component | Code | Responsibility |
@@ -28,12 +29,16 @@ This document describes the components, the data flow and the trust boundaries.
 | Market + ledger | `backend/counterproof/market/` | Synthetic marketplace; append-only hash-chained ledger of effects |
 | Rule templates + checker | `backend/counterproof/rules/` | Five explicit templates; pure function ledger → violations |
 | Runner | `backend/counterproof/runner/` | Fresh child per replay; limits; protocol; isolation backends |
-| Targets | `backend/counterproof/targets/` | Closed registry: vulnerable fixture 1.0.0, repaired 1.1.0, live-model agent 0.1.0 |
+| Targets | `backend/counterproof/targets/` | Closed registry, all written by the CounterProof team: `ref-purchasing-agent` 1.0.0 (intentionally vulnerable fixture) and 1.1.0 (repaired fixture); `llm-purchasing-agent` 0.1.1 (live model, no planted defects) and 0.2.0 (capability-enforced repair) |
 | Strategies | `backend/counterproof/strategies/` | Sequence explorer, merchant-content, retry/replay, model-assisted generator |
 | Evaluator | `backend/counterproof/evaluator.py` | Validate → version check → isolation → replays → classify → sealed evidence |
 | Jobs + worker | `jobs.py`, `worker.py` | Durable queue, heartbeats, cancellation, restart recovery |
 | API | `api.py`, `services.py`, `chain.py` | HTTP surface, state machines, chain reads, challenger bot commits |
-| Signer | `signer.py` | Independent re-verification and EIP-712 attestation |
+| Signer | `signer.py` | Independent k-of-n verification of the committed candidate, EIP-712 attestation over its own evidence, renewal, audit history |
+| Model-proposal record | `providers.py` (`RecordingBroker`) | What the model proposed per replay, observed by the evaluator's broker; stored alongside (not inside) the sealed bundle |
+| Regression | `regression.py`, `services.py` | Same-family replays of a verified counterexample; JSON + pytest export that re-executes the agent (recorded model proposals stand in for the model) |
+| Auth and limits | `auth.py`, `limits.py` | Operator bearer / judge cookie sessions, CSRF + Origin, budget caps, queue and token ceilings, operator stop |
+| Evidence re-check | `scripts/verify_evidence.py` | Offline seals/ledgers/checker re-run; optional read-only chain and ERC-8004 comparison |
 | Contract | `contracts/src/CounterProofBounties.sol` | Escrow, commitments, signature-checked settlement, pull payouts, refunds |
 | Console | `web/` | Evidence-first UI, wallet flows |
 | ERC-8004 link | `erc8004.py`, `scripts/testnet.py` | Agent identity (publisher) and reputation feedback (reporter) on the official ERC-8004 registries |
@@ -88,12 +93,24 @@ Validation Registry, which has no official deployment on Monad.
    `verified_violation`, `not_reproduced`, `inconclusive`, `target_crash`, `timeout`,
    `malformed_submission`, `runner_failure`, `cancelled`. Only `verified_violation` of an
    eligible rule is reward-eligible. The evidence bundle is sealed with its own digest.
-7. **Attest.** The worker asks the signer. The signer reloads spec and bundle by digest,
-   re-runs the checks, replays once itself (deterministic targets), reads the challenge and
-   submission from the chain, refuses a second attestation for the challenge, and signs
-   `Attestation(challengeId, specDigest, submissionId, candidateDigest, evidenceDigest,
-   challenger, recipient, verdict, expiry)` under the EIP-712 domain
-   `CounterProof / 1 / chainId / contract`.
+7. **Attest.** The evaluation job queues an `attestation` job, which asks the signer and
+   polls it. The signer trusts nothing the API or worker produced (their evaluation id and
+   evidence digest are recorded as provenance only). It reads the challenge and submission
+   from the chain first, loads the funded spec and the *committed* candidate by their
+   on-chain digests, and runs its own `evaluate()` - the spec's k-of-n policy, fresh
+   isolated children, the deterministic checker, and (for live-model targets) a model broker
+   inside the signer process. It signs only if its own bundle is a reward-eligible
+   verified violation bound to the on-chain submission, and the signed `evidenceDigest` is
+   the digest of that bundle, which it stores for the API to serve. A live-model
+   verification takes minutes, so it runs in the background (`202 verifying`); provider
+   failures are `failed` (retryable, never a verdict). It refuses a second attestation for
+   the challenge, and signs `Attestation(challengeId, specDigest, submissionId,
+   candidateDigest, evidenceDigest, challenger, recipient, verdict, expiry)` under the
+   EIP-712 domain `CounterProof / 1 / chainId / contract`. An attestation lives at most an
+   hour and never past the settlement deadline; while the window is open it can be
+   **renewed**: the signer re-reads the chain, re-checks its stored evidence and signs the
+   same message with only a later expiry (no new replay). Every signature is kept in the
+   signer's audit history.
 8. **Settle.** Anyone relays `settle(attestation, signature)`. The contract checks the
    evaluator signature, the commitment, the spec digest, the deadline and the expiry, then
    credits the *bound* recipient. The recipient withdraws (pull payment). After the
@@ -125,12 +142,23 @@ Validation Registry, which has no official deployment on Monad.
 | Challenger ↔ evaluator | evaluator | candidate (data) | closed action schema (`extra=forbid`), scope checks, digest binding |
 | Model ↔ evaluator | model broker (parent) | model output | broker fixes model/budget; output only drives the target's tool calls |
 | Evaluator ↔ chain | contract | everyone | signature over chain id + contract + all bindings; pull payments |
-| API/worker ↔ signer | signer | API/worker | separate process; re-verification; key never leaves the signer |
-| Browser ↔ API | API | browser | API accepts only tx hashes and reads values from receipts |
+| API/worker ↔ signer | signer | API/worker (incl. their artifacts and the shared data dir) | separate process; the signer re-executes the committed candidate itself and never signs worker evidence; it never turns its own database rows into a signature without re-checking them; key never leaves the signer |
+| Browser ↔ API | API | browser | mutations need an operator bearer or a judge session (cookie + CSRF + Origin); server-side budget caps; API accepts only tx hashes and reads values from receipts of the configured contract |
 
 The evaluator itself is a **declared trusted party**. The contract cannot check a replay;
 it checks that the declared evaluator signed these exact bindings. This is an
 attestation, not a zero-knowledge proof, and the system is not trustless.
+
+## Digest pins and historical reproduction
+
+A funded spec pins the digests of the target adapter (its module plus the shared host/protocol
+files), the market, the runner (including `evaluator.py`) and the checker. A replay refuses to
+run when the installed code differs (`spec.code_mismatches`). Adding `llm-purchasing-agent@0.2.0`
+required one new row in `runner/host.py` (the closed table of hosted adapters), which is part of
+every adapter's digest. Specs funded before that change (the Monad testnet challenges of
+2026-10-11) therefore re-run only from git tag `testnet-2026-10-11` (`51c0832`). Their recorded
+evidence can still be re-checked from any commit, because seals, ledgers and the checker do not
+depend on the adapter files.
 
 ## Isolation
 
