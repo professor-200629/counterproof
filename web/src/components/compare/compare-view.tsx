@@ -42,6 +42,7 @@ import {
 import { isRegressionActive, statusMeta } from "@/lib/status";
 import { ActionSequence } from "./action-sequence";
 import { ExportPanel, RegressionList, RegressionProgress } from "./regression-parts";
+import { unclearRegressionText } from "./regression-reading";
 import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
 import { VersionColumn } from "./version-column";
@@ -552,8 +553,7 @@ export function Verdict({
   return (
     <div className="mt-4 space-y-2">
       <Callout tone="warn" icon={<ShieldQuestion />} title="No clear result for this version" role="status">
-        The replay ended as &quot;{regression.outcome ?? regression.status}&quot;. That is neither a pass nor a reproduced violation; see
-        the evidence bundle for the evaluator&apos;s reason. {counts}
+        {unclearRegressionText(regression)} {counts}
         {statistical}
       </Callout>
       <TrustStatement kind="not-proof" />

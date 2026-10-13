@@ -6,6 +6,7 @@ import { compareLinkLabel } from "./compare-link-label";
 import { compareDescription, defaultTargetKey, isRepairOf, relationOf, repairTargets, Verdict } from "./compare-view";
 import { ledgerFacts, privilegedAttempts, refusedCalls, sameActions, witnessSeqs } from "./ledger-facts";
 import { RegressionList } from "./regression-parts";
+import { unclearRegressionText } from "./regression-reading";
 
 let seq = 0;
 function ev(type: string, data: LedgerEvent["data"]): LedgerEvent {
@@ -306,5 +307,23 @@ describe("before / after wording in a recording", () => {
     expect(compareLinkLabel(true, "Repair and regression", true)).toBe("Before / after (repair recorded)");
     expect(compareLinkLabel(null, "Repair and regression", true)).toBe("Before / after");
     expect(compareLinkLabel(false, "Repair and regression", false)).toBe("Repair and regression");
+  });
+});
+
+describe("unclearRegressionText", () => {
+  it("gives the backend's reason for an unclear regression instead of the evaluator's verdict", () => {
+    const reason =
+      "The rule was not violated in any of 3 replays, but only 1 completed; 2 ended when the provider rejected the " +
+      "model's generation before the agent saw it. A repair is confirmed only when every replay completes.";
+    const text = unclearRegressionText({ outcome: "inconclusive", status: "inconclusive", outcome_reason: reason });
+    expect(text).toBe(`The replay ended as "inconclusive". That is neither a pass nor a reproduced violation: ${reason}`);
+    expect(text).not.toContain("see the evidence bundle");
+  });
+
+  it("falls back to the evidence bundle when the backend gave no reason", () => {
+    expect(unclearRegressionText({ outcome: null, status: "target_crash" })).toBe(
+      "The replay ended as \"target_crash\". That is neither a pass nor a reproduced violation; see the evidence bundle " +
+        "for the evaluator's reason.",
+    );
   });
 });

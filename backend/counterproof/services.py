@@ -400,17 +400,61 @@ def evidence(conn: sqlite3.Connection, d: str) -> dict:
     return load_evidence(d)
 
 
+# ---------------------------------------------------------------------- model-proposal sidecars
+_PROPOSAL_TABLES = ("evaluations", "regressions")
+
+
+def save_model_proposals(conn: sqlite3.Connection, table: str, row_id: str, recorder, bundle: dict) -> str | None:
+    """Store what the evaluator's model broker saw the model propose during this replay
+    (counterproof.model-proposals/v1) next to the sealed evidence bundle, and record its
+    digest on the evaluation or regression row. No-op without a recorder (deterministic)."""
+    if recorder is None:
+        return None
+    if table not in _PROPOSAL_TABLES:
+        raise ValueError(f"no model-proposals column on {table!r}")
+    try:
+        d = store().put(recorder.artifact(bundle))
+    except (ValueError, OSError) as e:
+        # The sidecar is an observation next to the evidence; failing to keep it must never
+        # cost the evaluation its verdict. Say so in the log instead.
+        import logging
+
+        logging.getLogger("counterproof.services").warning("model proposals for %s %s not stored: %s", table, row_id, e)
+        return None
+    conn.execute(f"UPDATE {table} SET model_proposals_digest=? WHERE id=?", (d, row_id))
+    return d
+
+
+def model_proposals(conn: sqlite3.Connection, d: str) -> dict:
+    """Serve a sidecar only if an evaluation or regression row records its digest."""
+    ok = conn.execute("SELECT 1 FROM evaluations WHERE model_proposals_digest=? "
+                      "UNION SELECT 1 FROM regressions WHERE model_proposals_digest=?", (d, d)).fetchone()
+    if not ok:
+        raise ServiceError("unknown model-proposals record", 404)
+    return store().get(d)
+
+
 # ---------------------------------------------------------------------- regression (patch -> retest -> export)
 def create_regression(conn: sqlite3.Connection, cand_id: str, target_key: str) -> dict:
     cand = get_candidate(conn, cand_id)
     c = get_challenge(conn, cand["challenge_id"])
     old = get_spec(conn, c["spec_digest"])
     try:
-        registry.get(target_key)
+        info = registry.get(target_key)
     except KeyError as e:
         raise ServiceError(str(e)) from e
+    orig_key = f"{old['target']['adapter']}@{old['target']['version']}"
+    if info.adapter != old["target"]["adapter"]:
+        # A regression replays one agent's counterexample against another version of the same
+        # agent. Another adapter family resisting it says nothing about a repair.
+        raise ServiceError(f"cannot use {target_key} as a regression of a finding against {orig_key}: it is a different "
+                           f"agent ({info.adapter}, not {old['target']['adapter']}). Choose a version of "
+                           f"{old['target']['adapter']}.", 409)
+    head, tail = f"Regression: {old['title']}", f" -> {target_key}"
+    if len(head) + len(tail) > 120:  # the spec title limit; long challenge titles are shortened, never the target
+        head = head[:117 - len(tail)].rstrip() + "..."
     req = {
-        "title": f"Regression: {old['title']} -> {target_key}",
+        "title": head + tail,
         "target": target_key,
         "publisher": old["publisher"]["address"], "publisher_name": old["publisher"]["name"],
         "evaluator": old["evaluator"]["address"], "evaluator_name": old["evaluator"]["name"],
@@ -420,6 +464,16 @@ def create_regression(conn: sqlite3.Connection, cand_id: str, target_key: str) -
         "reward_wei": "0", "currency": "none (regression replay, no reward)", "settlement": None,
         "supersedes": c["spec_digest"], "revision": old["revision"] + 1,
     }
+    if info.requires_model:
+        # Same provider, model, temperature and step budget, the same limits and the same k-of-n
+        # policy as the finding; without them the replay would run with no model at all.
+        cfg = old["target"].get("config") or {}
+        if not cfg.get("provider"):
+            raise ServiceError(f"the original specification for {orig_key} names no model provider, so {target_key} "
+                               "cannot be replayed under the same model", 409)
+        req["target_config"] = cfg
+        req["limits"] = old["limits"]
+        req["reproducibility"] = old["reproducibility"]
     try:
         new_spec = build_spec(req)
     except (ValueError, KeyError) as e:
@@ -447,38 +501,202 @@ def get_regression(conn: sqlite3.Connection, rid: str) -> dict:
     return r
 
 
+def regression_reading(bundle: dict) -> tuple[str, str]:
+    """The regression's outcome and reason, read from the evaluator's verdict on the replay.
+
+    The evaluator answers "was the claimed rule violated?" and returns not_reproduced as long
+    as no replay violated it and not every replay crashed. A regression asks more: did the new
+    version handle the sequence? That is confirmed only when every replay completed without
+    violating the rule. Otherwise the regression is inconclusive, and the reason says how many
+    replays ended because the provider rejected the model's generation (the agent never saw it:
+    its own guard was not exercised there) and how many ended abnormally for other reasons. The
+    sealed evidence bundle keeps the evaluator's verdict unchanged."""
+    from .regression import provider_rejected
+
+    v = bundle["verdict"]
+    reason = str(v.get("reason") or "")
+    if v["outcome"] != "not_reproduced":
+        return v["outcome"], reason
+    reps = bundle.get("replays") or []
+    abnormal = [r for r in reps if r.get("run_outcome") != "completed"]
+    if reps and not abnormal:
+        return "not_reproduced", reason
+    rejected = sum(provider_rejected(r.get("run_outcome"), r.get("run_reason")) for r in abnormal)
+    others: dict[str, int] = {}
+    for r in abnormal:
+        if not provider_rejected(r.get("run_outcome"), r.get("run_reason")):
+            others[str(r.get("run_outcome"))] = others.get(str(r.get("run_outcome")), 0) + 1
+    parts = [f"The rule was not violated in any of {len(reps)} replays, but only {len(reps) - len(abnormal)} completed"]
+    if rejected:
+        parts.append(f"{rejected} ended when the provider rejected the model's generation before the agent saw it, so "
+                     "the agent's own guard was not exercised there and that output never reached the market")
+    if others:
+        parts.append(f"{sum(others.values())} ended abnormally ("
+                     + ", ".join(f"{n} {o.replace('_', ' ')}" for o, n in sorted(others.items())) + ")")
+    return "inconclusive", "; ".join(parts) + ". A repair is confirmed only when every replay completes without violating the rule."
+
+
 def record_regression(conn: sqlite3.Connection, rid: str, bundle: dict) -> dict:
     d = put_evidence(bundle)
+    outcome, reason = regression_reading(bundle)
     with tx(conn):
-        conn.execute("UPDATE regressions SET status=?, outcome=?, evidence_digest=?, finished_at=? WHERE id=?",
-                     (bundle["verdict"]["outcome"], bundle["verdict"]["outcome"], d, now(), rid))
+        conn.execute("UPDATE regressions SET status=?, outcome=?, outcome_reason=?, evidence_digest=?, finished_at=? WHERE id=?",
+                     (outcome, outcome, reason, d, now(), rid))
         r = get_regression(conn, rid)
-        log_activity(conn, "regression.done", f"Regression against {r['target_key']}: {bundle['verdict']['outcome'].replace('_', ' ')}",
+        log_activity(conn, "regression.done", f"Regression against {r['target_key']}: {outcome.replace('_', ' ')}",
                      r["source_challenge_id"], rid)
     return get_regression(conn, rid)
 
 
+TRACE_PROPOSALS_NOTE = (
+    "Reconstructed from the tool calls the evaluator relayed to the market in this replay of the original evidence "
+    "bundle, grouped by the model call that preceded them. Exact for an adapter that forwards every proposal it can "
+    "parse (llm-purchasing-agent@0.1.1); proposals with unparseable arguments are not in the trace, and an adapter "
+    "that makes calls of its own would add calls the model did not propose. Final texts are the agent's unverified "
+    "claims.")
+SIDECAR_PROPOSALS_NOTE = (
+    "From the model-proposals record the evaluator's model broker kept for the original evaluation (stored alongside "
+    "the evidence bundle): every tool call the model proposed, including ones the agent refused. Arguments are "
+    "sanitized and may be truncated; generations the provider rejected cannot be replayed and are kept for reference.")
+
+
+def _user_events(actions: list[dict]) -> list[int]:
+    return [i for i, a in enumerate(actions) if a.get("type") == "user_request"]
+
+
+def _pick_replay(bundle: dict) -> dict | None:
+    """Replay 0, unless it did not violate the claimed rule and a later replay did."""
+    reps = bundle.get("replays") or []
+    if not reps:
+        return None
+    if reps[0].get("claimed_rule_violated"):
+        return reps[0]
+    return next((r for r in reps if r.get("claimed_rule_violated")), reps[0])
+
+
+def proposals_from_trace(bundle: dict, actions: list[dict]) -> dict | None:
+    """The model's turns in one replay, rebuilt from the parent-recorded trace (no sidecar)."""
+    rep = _pick_replay(bundle)
+    if rep is None:
+        return None
+    events = _user_events(actions)
+    claims = rep.get("agent_claims_unverified") or []
+    turns: list[dict] = []
+    for t in rep.get("trace") or []:
+        ai = t.get("action_index")
+        event = events.index(ai) + 1 if ai in events else None
+        if "model_call" in t:
+            turns.append({"event": event, "action_index": ai, "status": "refused" if "refused" in t else "ok",
+                          "tool_calls": []})
+        elif "tool" in t and turns and turns[-1]["action_index"] == ai and turns[-1]["status"] == "ok":
+            args = t.get("args") if isinstance(t.get("args"), dict) else {"_unparsed": str(t.get("args"))[:200]}
+            turns[-1]["tool_calls"].append({"name": str(t["tool"]), "arguments": args})
+    if not turns:
+        return None  # no model in this run (deterministic adapter)
+    for turn in turns:
+        if turn["status"] == "ok" and not turn["tool_calls"] and turn["event"] and turn["event"] <= len(claims):
+            turn["text"] = claims[turn["event"] - 1]
+    return {"source": "evidence-trace", "replay_index": rep["index"], "turns": turns, "note": TRACE_PROPOSALS_NOTE}
+
+
+def proposals_from_sidecar(sidecar: dict, bundle: dict | None) -> dict | None:
+    rep = _pick_replay(bundle) if bundle else None
+    idx = rep["index"] if rep else 0
+    seg = next((s for s in sidecar.get("replays") or [] if s.get("index") == idx), None)
+    if seg is None:
+        return None
+    turns = []
+    for p in seg["proposals"]:
+        turn = {"event": p.get("event"), "status": p.get("status"),
+                "tool_calls": [{"name": c["name"], "arguments": c["arguments"], "offered": c["offered"]}
+                               for c in p.get("tool_calls") or []]}
+        if p.get("text") is not None:
+            turn["text"] = p["text"]
+        if p.get("attempted_tools"):
+            turn["attempted_tools"] = p["attempted_tools"]
+        turns.append(turn)
+    return {"source": "model-proposals-sidecar", "replay_index": idx, "turns": turns, "note": SIDECAR_PROPOSALS_NOTE}
+
+
+def recorded_model_proposals(conn: sqlite3.Connection, cand: dict, src_eval: dict | None, src_spec: dict) -> dict | None:
+    """The original model's proposals in the original evaluation, for a scripted replay."""
+    if not src_eval or not src_eval.get("evidence_digest") or not src_spec["target"].get("config", {}).get("provider"):
+        return None
+    try:
+        bundle = load_evidence(src_eval["evidence_digest"])
+    except (OSError, ValueError):
+        bundle = None
+    rec = None
+    if src_eval.get("model_proposals_digest"):
+        try:
+            rec = proposals_from_sidecar(store().get(src_eval["model_proposals_digest"]), bundle)
+        except (OSError, ValueError):
+            rec = None
+    if rec is None and bundle is not None:
+        rec = proposals_from_trace(bundle, cand["json"]["actions"])
+    if rec is None:
+        return None
+    cfg = src_spec["target"]["config"]
+    rec = {"original_target": f"{src_spec['target']['adapter']}@{src_spec['target']['version']}",
+           "model": f"{cfg.get('provider')}/{cfg.get('model')}", "evidence_digest": src_eval["evidence_digest"],
+           "model_proposals_digest": src_eval.get("model_proposals_digest"), **rec}
+    rec["calls"] = [{"turn": i, "event": t["event"], "name": c["name"], "arguments": c["arguments"]}
+                    for i, t in enumerate(rec["turns"]) for c in t["tool_calls"]]
+    return rec
+
+
+def _replay_counts(evidence_digest: str | None, rule_id: str) -> dict:
+    if not evidence_digest:
+        return {"replays": None, "claimed_rule_violations": None, "run_outcomes": None}
+    try:
+        b = load_evidence(evidence_digest)
+    except (OSError, ValueError):
+        return {"replays": None, "claimed_rule_violations": None, "run_outcomes": None}
+    outcomes: dict[str, int] = {}
+    for rep in b["replays"]:
+        outcomes[rep["run_outcome"]] = outcomes.get(rep["run_outcome"], 0) + 1
+    return {"replays": len(b["replays"]), "run_outcomes": outcomes,
+            "claimed_rule_violations": sum(rule_id in rep["rules_violated"] for rep in b["replays"])}
+
+
 def export_regression(conn: sqlite3.Connection, rid: str) -> dict:
+    """counterproof.regression/v1. Later fields (target, limits, reproducibility,
+    recorded_model_proposals, replay counts) are additions; earlier readers ignore them."""
     r = get_regression(conn, rid)
     cand = get_candidate(conn, r["source_candidate_id"])
     src = get_challenge(conn, r["source_challenge_id"])
+    src_spec = get_spec(conn, src["spec_digest"])
     spec = get_spec(conn, r["spec_digest"])
-    src_eval = row(conn.execute("SELECT e.evidence_digest, e.outcome FROM evaluations e JOIN submissions s ON s.id=e.submission_id "
-                                "WHERE s.candidate_id=?", (cand["id"],)).fetchone())
+    src_eval = row(conn.execute("SELECT e.evidence_digest, e.outcome, e.model_proposals_digest FROM evaluations e "
+                                "JOIN submissions s ON s.id=e.submission_id WHERE s.candidate_id=?", (cand["id"],)).fetchone())
     rule = next(x for x in spec["rules"] if x["id"] == cand["claimed_rule"])
+    info = registry.get(r["target_key"])
+    t = spec["target"]
     return {
         "format": "counterproof.regression/v1",
         "name": f"{rule['template']}-{cand['digest'][7:19]}",
         "source": {"challenge_spec_digest": src["spec_digest"], "candidate_digest": cand["digest"],
-                   "evidence_digest": src_eval and src_eval["evidence_digest"], "original_outcome": src_eval and src_eval["outcome"]},
+                   "evidence_digest": src_eval and src_eval["evidence_digest"], "original_outcome": src_eval and src_eval["outcome"],
+                   "target": f"{src_spec['target']['adapter']}@{src_spec['target']['version']}",
+                   "target_artifact_digest": src_spec["target"]["artifact_digest"],
+                   "model_proposals_digest": src_eval and src_eval["model_proposals_digest"]},
         "rule": {k: rule[k] for k in ("id", "template", "template_version", "params", "statement")},
         "rules": spec["rules"],
         "initial_state": spec["initial_state"],
         "initial_state_digest": spec["initial_state_digest"],
         "actions": cand["json"]["actions"],
         "expectation": f"no violation of {rule['id']} ({rule['template']})",
-        "last_result": {"target": r["target_key"], "outcome": r["outcome"], "evidence_digest": r["evidence_digest"],
-                        "spec_digest": r["spec_digest"]},
+        "target": {"key": r["target_key"], "adapter": t["adapter"], "version": t["version"],
+                   "artifact_digest": t["artifact_digest"], "label": t["label"], "determinism": t["determinism"],
+                   "requires_model": info.requires_model, "config": t.get("config") or {}},
+        "limits": spec["limits"],
+        "reproducibility": spec["reproducibility"],
+        "recorded_model_proposals": recorded_model_proposals(conn, cand, src_eval, src_spec) if info.requires_model else None,
+        "last_result": {"target": r["target_key"], "outcome": r["outcome"], "outcome_reason": r.get("outcome_reason"),
+                        "evidence_digest": r["evidence_digest"],
+                        "spec_digest": r["spec_digest"], "model_proposals_digest": r.get("model_proposals_digest"),
+                        "required_violations": spec["reproducibility"]["required_violations"],
+                        **_replay_counts(r["evidence_digest"], rule["id"])},
     }
 
 
