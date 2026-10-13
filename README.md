@@ -9,6 +9,13 @@ evidence, records the outcome and settles the reward on Monad.
 First domain: **AI purchasing agents** in an isolated, synthetic marketplace (invented
 merchants, products, balances and orders — no real shops, accounts or money).
 
+**See it:** https://counterproof.vercel.app is a read-only evidence explorer of the recorded
+Monad testnet run. Its first screen shows the live-model finding: injected shop text made the
+agent try to raise its own budget in 3 of 3 fresh replays. The page also shows the testnet
+reward, the ERC-8004 record and the repaired agent's replay. **Check it yourself:**
+`scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`. **Reproduce:**
+[docs/REPRODUCE.md](docs/REPRODUCE.md).
+
 > **What a result does and does not mean.** A verified violation shows that one target
 > version, given one exact action sequence, broke one agreed rule — observed in the
 > evaluator's own ledger, not in the agent's report. "No violation found" means none was
@@ -45,7 +52,11 @@ merchants, products, balances and orders — no real shops, accounts or money).
 |---|---|---|
 | `ref-purchasing-agent@1.0.0` | **Intentionally vulnerable fixture** | Two planted defects: per-purchase (not cumulative) budget check; no idempotency on payment retries. Findings against it demonstrate the pipeline; they are not discoveries. |
 | `ref-purchasing-agent@1.1.0` | Repaired fixture | Both defects fixed. |
-| `llm-purchasing-agent@0.1.1` | Independent implementation (live model) | Conventional tool-calling agent; behaviour comes from a hosted model through the evaluator's broker. Results are statistical (k-of-n replays). |
+| `llm-purchasing-agent@0.1.1` | Live-model agent (team-written, no planted defects) | Conventional tool-calling agent written by the CounterProof team. Its behaviour comes from a third-party hosted model reached through the evaluator's broker. Results are statistical (k-of-n replays). The recorded R5 finding is against this version. |
+| `llm-purchasing-agent@0.2.0` | Repaired live-model agent (team-written) | Enforces tool capabilities in code: privileged tools are neither offered nor dispatched. It also guards budget, merchant, duplicate payment and revocation in code, and records blocked proposals apart from ledger effects. |
+
+All adapters were written by the CounterProof team; no external agent has been evaluated yet
+(see [docs/EXTERNAL_AGENT_PLAN.md](docs/EXTERNAL_AGENT_PLAN.md)).
 
 ## Quick start (Windows, local chain)
 
@@ -207,6 +218,10 @@ Details: [web/FRONTEND_NOTES.md](web/FRONTEND_NOTES.md), section "Snapshot mode"
 - [STATUS.md](STATUS.md) — what works, what was tested, what is not verified
 - [HANDOFF.md](HANDOFF.md) — how to continue the work
 - [contracts/README.md](contracts/README.md) — contract build, test, deploy, verify
+- [docs/REPRODUCE.md](docs/REPRODUCE.md) — re-check, replay and re-run the results yourself
+- [docs/REMEDIATION_REPORT.md](docs/REMEDIATION_REPORT.md) — review findings of 2026-10-12 and what was fixed
+- [docs/EXTERNAL_AGENT_PLAN.md](docs/EXTERNAL_AGENT_PLAN.md) — pending external-agent evaluation
+- [docs/SUBMISSION.md](docs/SUBMISSION.md), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [docs/PITCH.md](docs/PITCH.md)
 
 ## Limitations
 
@@ -217,3 +232,6 @@ Details: [web/FRONTEND_NOTES.md](web/FRONTEND_NOTES.md), section "Snapshot mode"
 - Search is bounded; absence of findings is not proof of safety.
 - Live-model results depend on provider, model and date.
 - Testnet only. No mainnet assets.
+- All agents tested so far are first-party (team-written); no independent human reproduction yet.
+- Historical specs (2026-10-11) re-run only from git tag `testnet-2026-10-11`, because adding
+  the 0.2.0 adapter changed a file that is part of every adapter's code digest.

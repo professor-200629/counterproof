@@ -98,9 +98,12 @@ Recorded outcome on 2026-10-13 (Groq `openai/gpt-oss-120b`, temperature 0):
 
 Your results can differ. Hosted models change, and these results are bounded and statistical.
 
-**Your own challenge**, from scratch on a local chain: `backend/.venv/Scripts/python scripts/dev.py local`,
-open http://localhost:3000, and create a challenge for `llm-purchasing-agent@0.1.1` (or 0.2.0) with
-rule R5. Run the *merchant-content* strategy and submit what it finds. The evaluator and then the
+**Your own challenge**, from scratch on a local chain: `backend/.venv/Scripts/python scripts/dev.py local`.
+It generates a judge passcode in `data/judge.passcode` and an operator token in `data/operator.token`,
+and prints where they are, never the values. Open http://localhost:3000, click **Judge sign-in**,
+and create a challenge for `llm-purchasing-agent@0.1.1` (or 0.2.0) with rule R5. Judge sessions
+run under server-side caps: 50 sequences, 300 s and 60k model tokens per run, and the configured
+model only. Run the *merchant-content* strategy and submit what it finds. The evaluator and then the
 signer each replay it independently.
 
 ## Limits
