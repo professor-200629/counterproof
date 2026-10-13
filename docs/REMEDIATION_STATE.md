@@ -19,12 +19,12 @@ Continue from this file and the actual code. Update after every milestone.
 | 1 | Establish state, baseline checks | done (see log) |
 | 2 | Live-model attestation trust gap (signer independent k-of-n verification) | done: merged (unit A); forged-evidence repro test; live fork run 3/3 by signer |
 | 3 | Expired attestation renewal | done: merged (unit A); controlled-clock tests + anvil acceptance of renewed signature |
-| 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | unit C running (worktree) |
+| 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | done: merged (unit C, incl. review fixes); browser-checked on the local stack |
 | 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | done (code merged; live replay + export recorded) |
-| 6 | External open-source agent + reproduction kit | blocked (no container engine); plan in docs/EXTERNAL_AGENT_PLAN.md; kit todo |
+| 6 | External open-source agent + reproduction kit | external agent BLOCKED (no container engine; plan + pinned candidates in docs/EXTERNAL_AGENT_PLAN.md); kit done (docs/REPRODUCE.md, scripts/verify_evidence.py); human reproduction pending |
 | 7 | Judge experience (first screen, comparisons, metrics) | done: merged (unit D) + model-proposal display; 375 px checked in browser (compare overflow fixed) |
-| 8 | Docs, demo, pitch, submission | todo |
-| 9 | Verification, REMEDIATION_REPORT.md | todo |
+| 8 | Docs, demo, pitch, submission | done (README, STATUS, THREAT_MODEL, ARCHITECTURE, SUBMISSION, DEMO_SCRIPT, PITCH, REPRODUCE) |
+| 9 | Verification, REMEDIATION_REPORT.md | done (docs/REMEDIATION_REPORT.md); publishing awaits the owner |
 
 ## Verification log
 
@@ -80,27 +80,29 @@ Continue from this file and the actual code. Update after every milestone.
   under the container isolation the project requires for non-first-party code. Integration is
   blocked; candidates + kit being prepared.
 
-## Work in flight (2026-10-13 ~04:10 UTC)
+## Final state (2026-10-13 ~10:20 UTC)
 
-- Session restarted at ~03:50 UTC; stage-1 workflow resumed from its journal (run `wf_566fef0c-474`).
-- Merged into `remediation/judge-review`: unit D (judge UI, 142 web tests pass after merge) and unit B
-  (repaired adapter 0.2.0 etc.; backend 114 passed / 4 skipped after merge). Compare-view conflicts
-  resolved by keeping both units' wording.
-- Running: unit A fix pass (worktree `.claude/worktrees/wf_566fef0c-474-1`); unit C (workflow
-  `wf_7a974716-6bc`); `scripts/live_repair_replay.py` (real Groq replays of the challenge #3 attack
-  against 0.2.0 + an ordinary purchase; works on a copy of the testnet data dir).
-- Then: merge A and C (expected conflicts in api.py attest route, chain.py, worker.py, dev.py,
-  e2e Stack, web api.ts), re-run all suites, local anvil live-model e2e with the signer's own
-  verification, re-export snapshot, docs (REPRODUCE.md, README, STATUS, THREAT_MODEL, ARCHITECTURE,
-  SUBMISSION, DEMO_SCRIPT, PITCH), REMEDIATION_REPORT.md, browser checks.
+- All units merged into `remediation/judge-review` (local only). Final checks on the merged code:
+  backend 198 passed / 4 skipped; ERC-8004 fork tests 12 passed; forge 58 passed; web vitest 172
+  passed, tsc + eslint clean, snapshot build ok; local anvil e2e pass (24 steps,
+  `docs/evidence/local-e2e-20261013-151153.json`); verify_evidence.py all checks passed.
+- Historical reproduction verified: from tag `testnet-2026-10-11` the adapter/runner/market/checker
+  digests equal challenge #3's spec; from HEAD only the adapter digest differs (one row in
+  runner/host.py is the only digest-bound change).
+- Found and fixed during verification: migration race when API and workers start together.
+- Report: docs/REMEDIATION_REPORT.md.
 
 ## Blockers / owner actions
 
-- none yet
+- **Owner: confirm the submission cut-off and video limits in the portal** (public pages say only "13 Oct").
+- **Owner decision: publish** - push branch + tag, merge to main, redeploy Vercel (exact commands in
+  docs/REMEDIATION_REPORT.md "Owner actions"). Not done without explicit approval.
+- **Owner: record demo + pitch, submit.**
+- Blocked: external agent evaluation (no container engine on this machine); independent human
+  reproduction (needs an outside person - no outreach sent).
 
 ## Next concrete task
 
-Merge unit C (workflow `wf_7a974716-6bc`, worktree under .claude/worktrees); re-run all suites + local
-e2e on final code; final docs (README, STATUS, THREAT_MODEL, ARCHITECTURE, SUBMISSION) and
-docs/REMEDIATION_REPORT.md; then ask the owner once about publishing (push branch/merge to main,
-Vercel redeploy).
+If the owner approves publishing: run the commands in docs/REMEDIATION_REPORT.md "Owner actions",
+then `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain` and a browser check
+of the hosted first screen. Otherwise nothing is pending on the code side.
