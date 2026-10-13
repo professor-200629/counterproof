@@ -20,7 +20,7 @@ payout → ERC-8004 feedback → same attack on the repair → working purchase 
 | 1:29–1:43 | ERC-8004 panel, agent 2192 registration and R5 feedback links | “Identity 2192 binds the historical code digest. After checking settlement, the reporter recorded verified-violation feedback for R5 in the official ReputationRegistry.” |
 | 1:43–2:05 | Recorded compare page and model-proposal panel | “The same attack against 0.2.0 violated R5 in zero of three completed live replays. Privileged tools are withheld and refused in code. No privileged proposal occurred in these live runs; forced proposals exercise the dispatcher in scripted tests.” |
 | 2:05–2:16 | Repaired replay payment row and ordinary-purchase check | “The requested purchase still completed. A separate ordinary purchase also completed three of three times. The repair evidence is a local real-model run, with no new Monad transaction.” |
-| 2:16–2:39 | Download regression JSON/pytest; run timed exported pytest below | “This export executes both adapters with the recorded model proposals. The original still violates R5; the repaired version completes without it. Two tests pass; the fresh live-model variant is explicitly skipped.” Show real output and elapsed time. |
+| 2:16–2:39 | Download regression JSON/pytest; run timed exported pytest below | “This export executes both adapters with the recorded model proposals. The original still violates R5; the repaired version completes without it. Two tests pass; the fresh live-model variant is explicitly skipped.” Show real output (`-v` prints each test name: does-not-regress PASSED, original-still-fails PASSED, live k-of-n SKIPPED) and elapsed time. |
 | 2:39–2:50 | First screen; reproduction link | “Promise, counterexample, replay, reward, reputation, repair, test. Our evaluator remains trusted. This is bounded evidence; external-agent evaluation and outside reproduction are next.” |
 
 Original evidence:
@@ -50,7 +50,7 @@ if ($recordCheckExit -ne 0) { throw 'Signer recording check failed' }
 
 ```powershell
 $recordCheckTimer = [System.Diagnostics.Stopwatch]::StartNew()
-& .\backend\.venv\Scripts\python.exe -m pytest docs/evidence/test_regression_llm_0_2_0_20261013_092750.py -rs
+& .\backend\.venv\Scripts\python.exe -m pytest docs/evidence/test_regression_llm_0_2_0_20261013_092750.py -v -rs
 $recordCheckExit = $LASTEXITCODE
 $recordCheckTimer.Stop()
 Write-Output ('Elapsed seconds: {0:N2}' -f $recordCheckTimer.Elapsed.TotalSeconds)
@@ -61,7 +61,7 @@ Linux/macOS, **untested** (the shell's time reports actual elapsed time):
 
 ```bash
 time backend/.venv/bin/python -m pytest backend/tests/test_signer_verification.py -k forged -q
-time backend/.venv/bin/python -m pytest docs/evidence/test_regression_llm_0_2_0_20261013_092750.py -rs
+time backend/.venv/bin/python -m pytest docs/evidence/test_regression_llm_0_2_0_20261013_092750.py -v -rs
 ```
 
 Optional clean-clone discriminating check: actual adapter execution with recorded
@@ -78,7 +78,10 @@ backend/.venv/bin/python scripts/live_repair_replay.py --mode scripted
 For explicitly enabled fresh model runs use --mode live --allow-live, the reader's
 own provider key, and the safe credential commands in [REPRODUCE.md](REPRODUCE.md).
 Do that before recording and show its real report; provider quota and latency make it
-unsuitable for an uninterrupted 3-minute take. It reports fresh current-source bindings,
+unsuitable for an uninterrupted 3-minute take. One such run already exists:
+`docs/evidence/public-reproduction-live-20261013-163751.json` (13 October 16:37 UTC,
+**377.8 s**, original R5 3/3, repaired 0/3, purchases 3/3 each). If you show it, say
+“fresh live re-run, recorded earlier today, took about 6 minutes”. It reports fresh current-source bindings,
 actual completions and failures, with no fixture fallback.
 
 ## Recording checklist and time disclosure

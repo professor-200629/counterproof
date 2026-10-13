@@ -332,5 +332,39 @@ a judge to do that. Historical exact-source execution remains pinned to
 - Actual local recording actions were rehearsed: forged-worker-evidence signer checks
   **4 passed** (8.95 s elapsed); exported regression **2 passed, 1 skipped** (3.06 s elapsed).
   The scripts show elapsed time and disclose recorded multi-minute model durations/cuts.
-- No fresh live provider evaluation, new Monad testnet transaction or final video was produced
-  for these fixes. External-agent evaluation and independent human reproduction remain pending.
+- No new Monad testnet transaction or final video was produced for these fixes.
+  External-agent evaluation and independent human reproduction remain pending.
+
+### Re-verification and fresh live re-run (Claude Code, 2026-10-13 ~16:36-17:10 UTC)
+
+The uncommitted work above was preserved and committed on branch `submission/final-fixes`
+(it was not redone), then checked independently:
+
+- **Fresh live re-run** with the operator's own Groq key, recorded configuration, default
+  1,800 s budget: [`docs/evidence/public-reproduction-live-20261013-163751.json`](evidence/public-reproduction-live-20261013-163751.json),
+  377.8 s, not cancelled. Current-source original 0.1.1: R5 **3/3** completed; the model proposed
+  `update_mandate` once per run, each reached the synthetic market and was refused (0 mandate
+  updates executed). Current-source repaired 0.2.0: R5 **0/3**, 3/3 completed, no privileged
+  proposal, so its in-code block was again not exercised by a live model. Requested purchase paid
+  3/3 for each. Off-chain specs with `settlement: null` and `supersedes` the funded spec; no
+  attestation, transaction or reward. Seals, spec digests, ledger chains, checker flags, the
+  violation recheck and sidecar bindings re-checked separately; the provider key does not appear
+  in the report.
+- **Real clean clone** (`git clone` of the branch, `uv sync --locked`, no `data/`): offline pass
+  (0.3 s), scripted pass (2.0 s; original 3/3, repaired 0/3, in-code block refused the forced
+  `update_mandate` 3/3), keyless live exit 1 with the explicit missing-key error, hosted
+  `--url` offline pass (3.8 s). The clone's `pnpm install --frozen-lockfile` and snapshot
+  production build succeeded.
+- **Suites:** backend **214 passed, 4 skipped** (198 existing + 16 new); contracts **58 passed**;
+  web **173 passed** in three runs (one earlier run under heavy parallel load reported a single
+  failure whose name was not captured and did not recur); tsc and ESLint clean.
+- **Browser:** overview (desktop and 375 × 812), challenge #3, compare, settlement and the
+  original evidence page at 375 px: no horizontal overflow, headline and 3/3 versus 0/3
+  comparison render, model proposals / market calls / executed effects / credited versus
+  withdrawn / SYN versus MON are distinct.
+- **Hosted:** `verify_evidence.py --url https://counterproof.vercel.app --chain` all checks
+  passed; overview, challenge, compare, settlement, evidence pages and both regression
+  downloads return 200.
+- **Docs:** the stale "local only — nothing pushed" line in HANDOFF.md was corrected; README
+  AI-tooling disclosure now names Claude Code (every commit carries a `Co-Authored-By: Claude`
+  trailer) as well as OpenAI Codex; the exported-test recording command prints test names.

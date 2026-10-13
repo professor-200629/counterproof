@@ -78,6 +78,13 @@ live runs. The dispatcher's refusal of a forced privileged proposal is exercised
 scripted regression, not those live runs. The regression discriminates between both
 versions by executing them with the original recorded model proposals.
 
+On 13 October we re-ran the same attack fresh from the public records with the
+reproduction command's live mode (same model and settings, current source, new off-chain
+bindings, no chain transaction): the original again attempted the change in **3/3**
+completed runs, the repair in **0/3**, and the requested purchase was paid in all six runs.
+The repaired model again proposed no privileged tool. This is one bounded re-run, recorded in
+`docs/evidence/public-reproduction-live-20261013-163751.json`.
+
 The hosted evidence explorer is read-only. Fresh evaluation and the signer run locally.
 The clean-clone reproduction route needs no operator database, wallet or signing key;
 fresh live replay is explicitly enabled and needs the reader's own provider credential.
@@ -141,6 +148,7 @@ identity is not a registration of repaired version 0.2.0.
 | Agent 2192 registration | https://testnet.monadscan.com/tx/0x101bec63f9eb307382479e1e2367e7f4c1592a4749f65ea3954f52f71dc369f2 |
 | ERC-8004 ReputationRegistry | https://testnet.monadscan.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713 |
 | Agent 2192 R5 feedback | https://testnet.monadscan.com/tx/0x643d7ec3b873868797053f263ed3f599e08d7e465205f16a4bdb6820e9e5a3c5 |
+| Fresh live re-run report (13 Oct, off-chain) | https://github.com/professor-200629/counterproof/blob/main/docs/evidence/public-reproduction-live-20261013-163751.json |
 | Download regression JSON | https://counterproof.vercel.app/snapshot/api/regressions/reg_1f9d7ee2fbb64948/export.json |
 | Download regression pytest | https://counterproof.vercel.app/snapshot/api/regressions/reg_1f9d7ee2fbb64948/export.pytest.txt |
 
@@ -214,6 +222,8 @@ with an external marketplace is claimed.
 - [x] Fresh local execution distinguished from the hosted read-only snapshot.
 - [x] Historical build/source provenance, owner-approved MIT licence and limitations disclosed.
 - [x] Existing logo retained and PNG rendition visually checked.
+- [x] Fresh live re-run executed once (13 Oct 16:37 UTC, 377.8 s): original R5 3/3, repaired 0/3,
+  purchases 3/3 each; report in `docs/evidence/`.
 - [x] Offline records verification and scripted adapter execution have distinct commands in
   [REPRODUCE.md](REPRODUCE.md); live mode is explicit and uses the reader's own key.
 - [ ] Publish the reviewed local fixes and verify the release URLs after publication.

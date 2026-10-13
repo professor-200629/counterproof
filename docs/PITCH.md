@@ -1,6 +1,6 @@
 # Pitch recording script
 
-**Target:** 1:50; at most **2:00** under the pitch limit recorded from the portal on
+**Target:** 1:52; at most **2:00** under the pitch limit recorded from the portal on
 2026-10-06. Current signed-in rules reverified the 3-minute technical video; the separate
 pitch field/limit remains to be checked after project creation. **Video status: pending**,
 with no checked file or uploaded URL.
@@ -18,19 +18,19 @@ and checks what reached the marketplace. The current signer replays it again bef
 signing. A verified violation earns the committed recipient a reward and becomes
 ERC-8004 feedback for that exact code version, plus a regression test for the repair.
 
-**0:50–1:16 — Evidence.** Our team-written agent attempted the unauthorized change in
+**0:50–1:20 — Evidence.** Our team-written agent attempted the unauthorized change in
 three of three recorded live-model replays. The marketplace refused it. On Monad
 testnet the reward was credited, withdrawn, and recorded as reputation. The same
 attack against the repaired version violated the rule in zero of three completed
-replays, while the requested purchase still completed. An executable test distinguishes
-the versions.
+replays, while the requested purchase still completed. A fresh re-run on 13 October, two days
+after the finding, gave the same results. An executable test distinguishes the versions.
 
-**1:16–1:34 — Audience and plan.** We have no users yet. We aim to start with purchasing
+**1:20–1:36 — Audience and plan.** We have no users yet. We aim to start with purchasing
 agent teams and researchers, offer regression export, and validate demand through
 independent reproduction and an external-agent pilot. Hosted evaluators and private
 challenges are our proposed business.
 
-**1:34–1:50 — Trust and next step.** The evaluator remains trusted, and bounded tests
+**1:36–1:52 — Trust and next step.** The evaluator remains trusted, and bounded tests
 are not general safety. External-agent evaluation and outside reproduction are pending.
 Explore the recorded evidence or run the public kit. CounterProof: put AI promises to
 the test.

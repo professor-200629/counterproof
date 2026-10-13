@@ -41,8 +41,22 @@ LICENSE; it is part of the local release package. Both videos are still pending.
   completed comparison; desktop and 375 × 812 layout checks passed without overflow.
 - Recording commands were executed locally: signer forged-evidence checks **4 passed**
   (8.95 s measured); exported regression **2 passed, 1 skipped** (3.06 s measured).
-  These are checks, not completed videos. No fresh live-model run or new transaction
-  was made for these submission fixes.
+  These are checks, not completed videos. No new Monad testnet transaction was made.
+- **Fresh live re-run (2026-10-13 16:37 UTC, 377.8 s):** `live_repair_replay.py --mode live
+  --allow-live` with the operator's own Groq key and the recorded configuration. Current-source
+  original 0.1.1: R5 **3/3** (each `update_mandate` reached the market and was refused; 0 mandate
+  updates executed); repaired 0.2.0: R5 **0/3**, 3/3 completed, no privileged proposal (block
+  not exercised live); requested purchase paid 3/3 each. Off-chain, new spec bindings, no
+  settlement. Report: `docs/evidence/public-reproduction-live-20261013-163751.json`.
+- **Independent re-verification by Claude Code (same day, ~16:40-17:05 UTC)** of the work above:
+  a real `git clone` of branch `submission/final-fixes` with `uv sync --locked` and no `data/`
+  passed offline (0.3 s), scripted (2.0 s), keyless live (exit 1, explicit missing key) and
+  `--url https://counterproof.vercel.app` offline; a `pnpm install --frozen-lockfile` + snapshot
+  production build in that clone succeeded. Backend **214 passed, 4 skipped** (198 + 16 new);
+  contracts **58 passed**; web **173 passed** in 3 runs (a first run under heavy parallel load
+  reported 1 failure whose test name was not captured; it did not recur), tsc and ESLint clean. Desktop and 375 × 812
+  checks of the overview, challenge #3, compare, settlement and evidence pages: no horizontal
+  overflow. Hosted `verify_evidence.py --url ... --chain`: all checks passed.
 - Current signed-in portal rules, deadline, single track, public code/OSI LICENSE,
   3-minute technical demo and 120/200-character Overview limits verified read-only.
   Final Submission fields, pitch and logo details require owner project creation.

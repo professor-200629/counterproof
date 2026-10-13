@@ -166,6 +166,15 @@ run never produce a successful repair. A completed live run without the original
 is reported honestly: it may not reproduce the historical finding today. No chain transaction,
 attestation, MON payout or ERC-8004 feedback is created by this command.
 
+**Executed once on 2026-10-13 at 16:37 UTC** (Windows 11, operator's own Groq key, default
+recorded configuration): report [`docs/evidence/public-reproduction-live-20261013-163751.json`](evidence/public-reproduction-live-20261013-163751.json),
+377.8 s elapsed, not cancelled. Current-source original `0.1.1`: R5 violated in **3/3** completed
+runs; the model proposed `update_mandate` once per run, each call reached the synthetic market and
+was refused (0 mandate updates executed). Current-source repaired `0.2.0`: R5 **0/3**, 3/3 completed;
+the model proposed no privileged tool, so the in-code block was again not exercised live. The
+requested purchase was paid in 3/3 runs of each. This is one bounded run on one date with one
+hosted model, not a guarantee; its specs are new off-chain bindings, not the funded historical one.
+
 ## Historical source versus fresh bindings
 
 The 2026-10-11 funded specification pins the historical adapter artifact. Adding 0.2.0 changed

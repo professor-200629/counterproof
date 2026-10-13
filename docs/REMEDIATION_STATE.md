@@ -2,12 +2,12 @@
 
 Continue from this file and the actual code. Update after every milestone.
 
-- **Current checkout:** `C:\dev\counterproof`, branch `main`, baseline
-  `7ea1a96883a773b71e66e4852c64e52b4dfe71ed`. Clean when this submission-fix session started;
-  no owner edits were overwritten. New submission fixes are local and uncommitted.
+- **Current checkout:** `C:\dev\counterproof`, branch **`submission/final-fixes`** (from `main`
+  @ `7ea1a96`). The Codex session's uncommitted submission fixes were preserved in commit
+  `5adbbe6`; the fresh live re-run and re-verification docs follow on the same branch.
 - **Published baseline:** GitHub main matches `7ea1a96`; the preserved historical tag is
   published. https://counterproof.vercel.app serves the 2026-10-13 read-only Monad Testnet
-  evidence snapshot. The new local release is not yet published.
+  evidence snapshot. **The `submission/final-fixes` branch is not yet pushed or deployed.**
 - **Started:** 2026-10-12 21:39 UTC.
 - **Deadline (signed-in portal re-checked 2026-10-13):** dashboard and project overview show
   **14 October 2026, 09:29 GMT+5:30 (IST)**. The rules modal, version 3.0 updated 3 September,
@@ -26,7 +26,9 @@ Continue from this file and the actual code. Update after every milestone.
 | Submission package and recordings | Paste-ready package, updated timed scripts and existing-brand PNG prepared; videos still pending. |
 | Current portal requirements | Signed-in rules and setup limits verified; submission fields and logo constraints inaccessible before project creation. Working-product requirement needs actual operation demo plus runnable code and Monad deployment. Snapshot alone is not claimed to satisfy it. |
 | Open-source license | Owner explicitly approved MIT and affirmed authority on 2026-10-13; root LICENSE added locally. Dependency licenses retained. |
-| Publication | Prior baseline publication confirmed. New release requires owner authorization; no push, deploy or new testnet transaction in this session. |
+| Fresh live re-run | Done 16:37 UTC: original R5 3/3, repaired 0/3 (3/3 completed), purchases 3/3 each; `docs/evidence/public-reproduction-live-20261013-163751.json`. Off-chain only. |
+| Independent re-verification (Claude Code) | Done: real clean clone + locked deps, all three modes, clean-clone web build, backend 214/4 skipped, contracts 58, web 173, browser desktop + 375 px, hosted chain check. |
+| Publication | Branch ready; push + merge to main + Vercel redeploy await the owner's yes. No new testnet transaction. |
 | External agent / independent human reproduction | Still pending; no external evaluation or outreach performed. |
 
 ## Earlier remediation milestones (dated 2026-10-12/13)
@@ -130,8 +132,8 @@ Continue from this file and the actual code. Update after every milestone.
 - All **52 hosted snapshot files**: HTTP 200 and exact byte matches to the checkout; **5 hosted
   evidence pages**: HTTP 200. Production preview also served all 52 downloads correctly.
 - Final diff audit: no historical snapshot/evidence/deployment artifacts, funded specs, backend
-  digest-bound source or contracts modified; whitespace check clean. No actual fresh provider run
-  in this session; live credential/failure paths tested. Linux/macOS remain untested.
+  digest-bound source or contracts modified; whitespace check clean. No fresh provider run in the
+  Codex session (live credential/failure paths tested); a real one followed at 16:37 UTC (see table above). Linux/macOS remain untested.
 
 ## Blockers / owner actions
 
@@ -146,10 +148,16 @@ Continue from this file and the actual code. Update after every milestone.
 
 ## Next concrete task
 
-The local submission fixes are implemented and verified. Review docs/SUBMISSION_FINAL.md and the
-release package, authorize publication if desired, then record/upload the two videos and complete
-the portal project and submission yourself. A local production snapshot preview is available at
-http://127.0.0.1:3101 for recording; it displays recorded evidence and runs no evaluator jobs.
-Do not mark videos, external-agent evaluation or outside reproduction complete until the actual
-artifacts or independent work exist. No commit, push, deploy or new testnet transaction has occurred
-in this session.
+1. If the owner approves publication: `git push -u origin submission/final-fixes`, fast-forward
+   `main` to it and push, then `cd web && npx vercel deploy --prod --yes --build-env
+   NEXT_PUBLIC_SNAPSHOT=1 --build-env NEXT_PUBLIC_SNAPSHOT_SOURCE_URL=https://github.com/professor-200629/counterproof`.
+   Re-check: `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`,
+   `scripts/live_repair_replay.py --mode offline --url https://counterproof.vercel.app`, curl the
+   pages and the GitHub blob links in SUBMISSION_FINAL.md; then change the "not yet pushed"
+   lines here, in STATUS.md, REMEDIATION_REPORT.md, REPRODUCE.md and SUBMISSION_FINAL.md.
+2. Owner: create the portal project, check the remaining fields (pitch limit, logo), record and
+   check both videos (DEMO_SCRIPT.md, PITCH.md), paste real links into SUBMISSION_FINAL.md and
+   submit before **14 October 09:29 IST**. The agent must not accept terms or submit the form.
+   A local snapshot preview for recording runs at http://127.0.0.1:3101 (read-only, no jobs).
+3. Do not mark videos, external-agent evaluation or outside reproduction complete until the
+   actual artifacts or independent work exist.
