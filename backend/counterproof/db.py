@@ -49,6 +49,12 @@ def migrate(conn: sqlite3.Connection) -> list[str]:
             continue
         conn.execute("BEGIN IMMEDIATE")
         try:
+            # Re-check under the write lock: the API and the workers start together and another
+            # process may have applied this migration since `done` was read (ALTER TABLE ADD
+            # COLUMN is not idempotent).
+            if conn.execute("SELECT 1 FROM schema_migrations WHERE name=?", (f.name,)).fetchone():
+                conn.execute("COMMIT")
+                continue
             for stmt in _statements(f.read_text(encoding="utf-8")):
                 conn.execute(stmt)
             conn.execute("INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)", (f.name, now()))
