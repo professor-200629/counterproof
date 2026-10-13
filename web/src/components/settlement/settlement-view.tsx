@@ -292,7 +292,7 @@ function AnswerCallout({
       ? "A verified violation is waiting for the declared evaluator's signature; its signer is replaying the committed candidate itself first."
       : "A verified violation is waiting for the declared evaluator's signature.";
   else if (nowSec !== null && nowSec > attestation.expiry)
-    next = canRenewAttestation(view, attestation, settlement.onchain, nowSec)
+    next = !SNAPSHOT_MODE && canRenewAttestation(view, attestation, settlement.onchain, nowSec)
       ? "The attestation expired before anyone relayed it. The settlement window is still open, so it can be renewed below."
       : "The attestation expired before anyone relayed it.";
   else
@@ -601,7 +601,8 @@ function AttestStep({
   const payable = isPayableVerdict(evaluation);
   const job = settlement.attestation_job ?? null;
   const liveModel = view.spec.target.determinism === "stochastic";
-  const renewable = canRenewAttestation(view, attestation, settlement.onchain, nowSec);
+  // Renewal is a live action: the read-only snapshot shows the recorded expiry, not an offer.
+  const renewable = !SNAPSHOT_MODE && canRenewAttestation(view, attestation, settlement.onchain, nowSec);
   let state: TimelineState = "upcoming";
   let stateLabel: string | undefined;
   let summary = "Signed only for a verified violation that is eligible for the reward.";
