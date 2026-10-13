@@ -59,6 +59,11 @@ and doubles provider usage, so it is asynchronous (signer state in `signer.sqlit
 expiry, capped at the settlement deadline) while the challenge is funded; renewal never
 re-runs a stochastic replay. Attestations signed before this change (the recorded testnet
 ones) carry the worker's evidence digest and are labelled as such in the console.
+The signer does not trust its own database either, because `signer.sqlite` sits in the
+data directory the API and worker write: a stored attestation must recover to the evaluator
+key, and a renewal needs an HMAC (key derived from the evaluator key) on the signer's
+'verified' row. A separate signer-only directory was not chosen: the shipped launchers run
+every role as one OS user, so it would not change who can write the file.
 
 ### D12. Native testnet MON, no tokens
 Avoids token dependencies, approvals and extra contracts.

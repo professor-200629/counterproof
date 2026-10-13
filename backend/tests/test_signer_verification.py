@@ -552,6 +552,211 @@ def test_legacy_attestation_is_repeated_while_usable_and_reverified_when_expired
     assert b["typed_data"]["message"]["evidenceDigest"] == "0x" + b["evidence_digest"][7:]
 
 
+# --------------------------------------------------------------------------- the signer's own state is not trusted
+# signer.sqlite lives in COUNTERPROOF_DATA_DIR, next to the artifact store the API and the
+# worker write. A compromised API/worker that can write that directory can also write rows
+# into the signer's database, so the signer must not turn a row it reads back into a new
+# signature: a stored attestation must carry this signer's own signature, and a "verified"
+# row must carry a MAC only the evaluator key can produce.
+def plant(table: str, row: dict) -> None:
+    from counterproof.signer import _db
+
+    conn = _db()
+    try:
+        conn.execute(f"INSERT OR REPLACE INTO {table}({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
+    finally:
+        conn.close()
+
+
+def binding_message(w, evidence: str, expiry: int, sid=SID) -> dict:
+    sub = w["submissions"][sid]
+    return {"challengeId": int(ONCHAIN_ID), "specDigest": "0x" + w["digest"][7:], "submissionId": sid,
+            "candidateDigest": "0x" + sub["candidate_digest"][7:], "evidenceDigest": "0x" + evidence[7:],
+            "challenger": sub["challenger"], "recipient": sub["recipient"], "verdict": 1, "expiry": expiry}
+
+
+def plant_verified(evidence: str, now: int, sid=SID, **extra) -> None:
+    plant("verifications", {"chain_id": CHAIN_ID, "contract": CONTRACT, "challenge_id": ONCHAIN_ID, "submission_id": sid,
+                            "status": "verified", "outcome": "verified_violation", "reason": "claimed rule violated in 3 of 3 replays",
+                            "evidence_digest": evidence, "mode": "stochastic", "replays": 3, "replays_done": 3, "violated": 3,
+                            "required": 2, "started_at": now - 300, "finished_at": now - 60, "attempt": 1} | extra)
+
+
+def plant_signed(evidence: str, typed: dict, signature: str, expiry: int, now: int, att_id="att_planted", sid=SID) -> None:
+    plant("signed", {"chain_id": CHAIN_ID, "contract": CONTRACT, "challenge_id": ONCHAIN_ID, "submission_id": sid,
+                     "evidence_digest": evidence, "attestation_id": att_id, "typed_data": json.dumps(typed),
+                     "signature": signature, "expiry": expiry, "created_at": now - 3600})
+
+
+@pytest.mark.parametrize("forger", ["zero-signature", "outsider-key"])
+def test_planted_signer_rows_cannot_renew_forged_evidence(world, forger):
+    """Reviewer PoC: forged-but-consistent evidence in the store plus two planted rows in
+    signer.sqlite (a 'verified' verification and an expired 'signed' attestation binding the
+    forged digest). Before the fix one POST /attest returned 200 kind='renewal' with a genuine
+    evaluator signature over the forged evidenceDigest and no replay at all. The stored row was
+    never signed by this key, so the signer now refuses and signs nothing."""
+    from counterproof.signer import sign_attestation
+
+    forged = forge(worker_bundle(world, Obeys(violate_replays=set())), world["spec"])
+    assert recheck_bundle(forged, world["spec"]) == []
+    fd = put_evidence(forged)
+    client, app = signer(world, Brokers(lambda: Obeys(violate_replays=set())))
+    now = world["clock"].t
+    msg = binding_message(world, fd, now - 1)
+    fake_sig, typed = sign_attestation(devchain.ANVIL_KEYS["outsider"], CHAIN_ID, CONTRACT, msg)
+    if forger == "zero-signature":
+        fake_sig = "0x" + "00" * 65
+    plant_verified(fd, now)
+    plant_signed(fd, typed, fake_sig, now - 1, now)
+    r = client.post("/attest", json=body(world, evidence=fd))
+    assert r.status_code == 409, r.text
+    assert "not signed by this signer" in r.json()["refused"][0]
+    assert app.state.verifier.broker_factory.calls == 0
+    assert signer_rows("attestation_history") == []
+    assert [s["signature"] for s in signer_rows("signed")] == [fake_sig]  # nothing new was signed
+    world["clock"].t = now + 10  # a usable-looking expiry is not returned either
+    plant_signed(fd, typed | {"message": msg | {"expiry": now + 3600}}, fake_sig, now + 3600, now)
+    r = client.post("/attest", json=body(world, evidence=fd))
+    assert r.status_code == 409 and "not signed by this signer" in r.json()["refused"][0]
+
+
+def test_planted_verified_row_cannot_renew_a_legacy_signature_blindly(world):
+    """The narrower case: a GENUINE evaluator signature from the pre-fix signer over forged
+    worker evidence (the original trust gap) plus a planted 'verified' row naming that evidence.
+    Signature recovery alone would accept the row and renew the forged digest. The planted row
+    has no valid MAC, so the signer treats the attestation as legacy: an expired legacy
+    attestation is re-verified independently, the committed candidate does not reproduce, and
+    nothing is signed over the forged digest."""
+    from counterproof.signer import sign_attestation
+
+    forged = forge(worker_bundle(world, Obeys(violate_replays=set())), world["spec"])
+    fd = put_evidence(forged)
+    client, app = signer(world, Brokers(lambda: Obeys(violate_replays=set())))
+    now = world["clock"].t
+    sig, typed = sign_attestation(EVALUATOR_KEY, CHAIN_ID, CONTRACT, binding_message(world, fd, now + 3600))
+    assert recovered(typed, sig) == EVALUATOR_ADDR
+    plant_signed(fd, typed, sig, now + 3600, now, att_id="att_legacy")
+    plant_verified(fd, now)
+    world["clock"].t = now + 3601  # expired; the settlement window is still open
+    first, final = attest(client, app, world, evidence=fd)
+    assert first.status_code == 202 and first.json()["status"] == "verifying", first.text
+    assert final.status_code == 409 and final.json()["status"] == "rejected", final.text
+    assert "did not verify the violation: not_reproduced" in final.json()["refused"][0]
+    assert app.state.verifier.broker_factory.calls == 1
+    assert signer_rows("attestation_history") == []
+    assert [(s["attestation_id"], s["signature"]) for s in signer_rows("signed")] == [("att_legacy", sig)]
+
+
+def test_verified_row_without_the_signers_mac_is_reverified_not_renewed(world):
+    """Renewal needs the MAC the signer wrote when its own replay verified the evidence. A
+    verified row without it is not trusted: the expired attestation is re-verified (a fresh
+    k-of-n replay), never renewed from the row."""
+    from counterproof.signer import _db
+
+    client, app, a = signed_once(world)
+    assert signer_rows("verifications")[0]["mac"]
+    conn = _db()
+    conn.execute("UPDATE verifications SET mac=NULL")
+    conn.close()
+    world["clock"].t = a["expiry"] + 1
+    first, final = attest(client, app, world)
+    assert first.status_code == 202 and final.status_code == 200, final.text
+    b = final.json()
+    assert b["kind"] == "reverified" and b["previous_attestation_id"] == a["attestation_id"]
+    assert app.state.verifier.broker_factory.calls == 2
+    assert signer_rows("verifications")[0]["mac"]  # the fresh verification is MACed again
+    # Trusted again: near its (deadline-capped) expiry it is answered from the row, no replay.
+    world["clock"].t = b["expiry"] - 10
+    c = client.post("/attest", json=body(world))
+    assert c.status_code == 200 and c.json()["repeated"] is True and c.json()["attestation_id"] == b["attestation_id"]
+    assert app.state.verifier.broker_factory.calls == 2
+
+
+def test_signer_database_from_before_the_mac_is_migrated(world):
+    """An existing signer.sqlite (verifications without the mac column) gets the column; its
+    old verified rows carry no MAC, so they are never renewed from the row."""
+    import sqlite3
+
+    from counterproof.config import settings
+    from counterproof.signer import SCHEMA
+
+    old = [stmt.replace("attempt INTEGER NOT NULL DEFAULT 1, mac TEXT, ", "attempt INTEGER NOT NULL DEFAULT 1, ") for stmt in SCHEMA]
+    assert old != SCHEMA
+    path = settings().data_dir / "signer.sqlite"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    for stmt in old:
+        conn.execute(stmt)
+    conn.commit()
+    conn.close()
+    signer(world)
+    cols = [r["name"] for r in _signer_conn_rows("PRAGMA table_info(verifications)")]
+    assert "mac" in cols
+
+
+def _signer_conn_rows(sql: str) -> list[dict]:
+    from counterproof.signer import _db
+
+    conn = _db()
+    try:
+        return [dict(r) for r in conn.execute(sql)]
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- more bindings
+def test_onchain_challenger_must_match_the_committed_candidate(world):
+    """The chain commits challenger OUTSIDER, but the revealed candidate names CHALLENGER: the
+    signer's own evaluate() reports a malformed submission and nothing is signed."""
+    world["submissions"][SID]["challenger"] = OUTSIDER
+    client, app = signer(world)
+    _, final = attest(client, app, world)
+    assert final.status_code == 409 and final.json()["status"] == "rejected", final.text
+    assert "malformed_submission" in final.json()["refused"][0] and "challenger" in final.json()["refused"][0]
+    assert signer_rows("signed") == []
+
+
+def test_submission_committed_for_another_challenge_is_refused(world):
+    world["submissions"][SID]["challenge_id"] = "8"
+    client, app = signer(world)
+    r = client.post("/attest", json=body(world))
+    assert r.status_code == 409 and "submission not committed on chain for this challenge" in r.json()["refused"]
+    del world["submissions"][SID]
+    r = client.post("/attest", json=body(world))
+    assert r.status_code == 409 and "submission not committed on chain for this challenge" in r.json()["refused"]
+    assert app.state.verifier.broker_factory.calls == 0 and signer_rows("verifications") == []
+
+
+def test_onchain_evaluator_must_be_this_signer(world):
+    world["challenge"]["evaluator"] = OUTSIDER
+    client, app = signer(world)
+    r = client.post("/attest", json=body(world))
+    assert r.status_code == 409 and "on-chain evaluator is not this signer" in r.json()["refused"]
+    assert app.state.verifier.broker_factory.calls == 0 and signer_rows("verifications") == []
+
+
+@pytest.mark.parametrize("change, reason", [
+    ({"evaluator": OUTSIDER}, "this signer is not the evaluator declared in the specification"),
+    ({"settlement": {"chain_id": CHAIN_ID, "network": "anvil-local", "contract": "0x" + "c1" * 20}},
+     "specification settles on a different chain or contract"),
+    ({"settlement": {"chain_id": 10143, "network": "monad-testnet", "contract": CONTRACT}},
+     "specification settles on a different chain or contract"),
+    ({"settlement": None}, "specification settles on a different chain or contract"),
+])
+def test_funded_spec_must_name_this_signer_chain_and_contract(world, change, reason):
+    """The chain names the funded spec digest; the spec behind it must name this signer as
+    evaluator and settle on the signer's chain and contract, or nothing is replayed."""
+    kw = {"rules": ALL_RULES, "target_config": CONFIG, "evaluator": EVALUATOR_ADDR,
+          "settlement": {"chain_id": CHAIN_ID, "network": "anvil-local", "contract": CONTRACT}} | change
+    spec, d = make_spec(LLM, **kw)
+    world["store"].put(spec)
+    world["challenge"]["spec_digest"] = d
+    client, app = signer(world)
+    r = client.post("/attest", json=body(world, spec_digest=d))
+    assert r.status_code == 409 and reason in r.json()["refused"], r.text
+    assert app.state.verifier.broker_factory.calls == 0 and signer_rows("verifications") == []
+
+
 # --------------------------------------------------------------------------- concurrency
 def _race(client, bodies: list[dict]) -> list:
     barrier = threading.Barrier(len(bodies))

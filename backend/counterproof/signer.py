@@ -52,6 +52,23 @@ min(now + TTL, settlement deadline). Renewal never re-runs stochastic replays. E
 signature is kept in `attestation_history`. One reward per challenge: an attestation for a
 different submission is refused.
 
+The signer's own state is not trusted either. signer.sqlite lives in COUNTERPROOF_DATA_DIR,
+which the API and the worker can write (same directory as the store, same OS user in the
+shipped launchers), so nothing read back from it becomes a signature on trust:
+
+* a stored attestation is used at all (repeated, renewed, or held against another
+  submission) only if its signature recovers to this key over exactly the stored message
+  and the row agrees with that message; otherwise the request is refused;
+* a renewal additionally needs the `verified` row to carry this signer's MAC
+  (HMAC-SHA256 under a key derived from EVALUATOR_PRIVATE_KEY) over (chain, contract,
+  challenge, submission, own evidence digest), written only when its own replay verified
+  the evidence. A row without a valid MAC is treated like a legacy attestation: returned
+  unchanged while still usable, verified independently again once expired.
+
+Whoever can write signer.sqlite can still delete or alter rows - a denial of service and an
+unreliable `attestation_history` - but cannot obtain a signature the signer would not issue
+after its own verification.
+
 Concurrency: every decision for a challenge runs under a per-challenge lock and every
 write in a `BEGIN IMMEDIATE` transaction; at most one verification runs per challenge, so
 two submissions racing for one challenge can never both be signed.
@@ -62,6 +79,7 @@ declared trusted evaluator - not a proof the contract can check by itself.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -118,7 +136,7 @@ SCHEMA = [
     "challenge_id TEXT NOT NULL, submission_id TEXT NOT NULL, status TEXT NOT NULL, outcome TEXT, reason TEXT, "
     "evidence_digest TEXT, worker_evaluation_id TEXT, worker_evidence_digest TEXT, mode TEXT, replays INTEGER, "
     "replays_done INTEGER NOT NULL DEFAULT 0, violated INTEGER, required INTEGER, started_at INTEGER NOT NULL, "
-    "finished_at INTEGER, attempt INTEGER NOT NULL DEFAULT 1, "
+    "finished_at INTEGER, attempt INTEGER NOT NULL DEFAULT 1, mac TEXT, "
     "PRIMARY KEY (chain_id, contract, challenge_id, submission_id))",
     "CREATE UNIQUE INDEX IF NOT EXISTS verifications_one_running ON verifications(chain_id, contract, challenge_id) "
     "WHERE status='verifying'",
@@ -152,6 +170,22 @@ def sign_attestation(key: str, chain_id: int, contract: str, message: dict) -> t
     return "0x" + bytes(signed.signature).hex(), typed
 
 
+def recover_attestation_signer(typed: dict, signature: str) -> str:
+    """The address whose key produced `signature` over the Attestation in `typed` (lower case).
+    The types are always ATTESTATION_TYPES, never the stored ones."""
+    from eth_account import Account
+    from eth_account.messages import encode_typed_data
+    from web3 import Web3
+
+    m = dict(typed["message"])
+    for k in ("specDigest", "submissionId", "candidateDigest", "evidenceDigest"):
+        m[k] = bytes.fromhex(m[k][2:])
+    for k in ("challenger", "recipient"):
+        m[k] = Web3.to_checksum_address(m[k])
+    enc = encode_typed_data(domain_data=typed["domain"], message_types=ATTESTATION_TYPES, message_data=m)
+    return Account.recover_message(enc, signature=signature).lower()
+
+
 class AttestRequest(BaseModel):
     spec_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     onchain_challenge_id: str = Field(pattern=r"^[0-9]{1,30}$")
@@ -179,6 +213,8 @@ def _init_db() -> None:
         try:
             for stmt in SCHEMA:
                 conn.execute(stmt)
+            if "mac" not in {r["name"] for r in conn.execute("PRAGMA table_info(verifications)")}:
+                conn.execute("ALTER TABLE verifications ADD COLUMN mac TEXT")  # signer.sqlite from before the MAC
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -254,10 +290,15 @@ class Verifier:
         self.broker_factory = broker_factory
         self.sync_wait = sync_wait
         self.me = None
+        self._mac_key = None
         if key:
             from eth_account import Account
 
             self.me = Account.from_key(key).address.lower()
+            # Authenticates the signer's own "verified" rows: only the holder of the evaluator
+            # key can produce it, so a row planted in signer.sqlite cannot be renewed.
+            raw = bytes.fromhex(key[2:] if key[:2].lower() == "0x" else key)
+            self._mac_key = hmac.new(raw, b"counterproof/signer-state-mac/v1", hashlib.sha256).digest()
         self.stop = threading.Event()
         self._slots = threading.BoundedSemaphore(max(1, MAX_PARALLEL))
         self._global = threading.Lock()
@@ -280,6 +321,38 @@ class Verifier:
         """Wait for every verification this app started (tests and shutdown)."""
         for t in list(self._threads.values()):
             t.join(timeout)
+
+    # ------------------------------------------------------------------ the signer's own state
+    # signer.sqlite sits in COUNTERPROOF_DATA_DIR, which the API and the worker can write.
+    # Nothing read back from it becomes a signature on trust.
+    def _mac(self, k: tuple, sid: str, evidence: str | None) -> str:
+        msg = json.dumps([int(k[0]), str(k[1]).lower(), str(k[2]), sid.lower(), evidence, "verified"], separators=(",", ":"))
+        return hmac.new(self._mac_key, msg.encode(), hashlib.sha256).hexdigest()
+
+    def _mac_ok(self, k: tuple, sid: str, row: dict) -> bool:
+        return bool(row.get("mac")) and hmac.compare_digest(row["mac"], self._mac(k, sid, row["evidence_digest"]))
+
+    def _stored_problems(self, k: tuple, signed: dict) -> list[str]:
+        """A stored attestation is used (repeated, renewed, or held against another submission)
+        only if this key signed exactly the message it holds and the row agrees with it."""
+        s = settings()
+        try:
+            typed = json.loads(signed["typed_data"])
+            m = typed["message"]
+            ok = (typed.get("primaryType") == "Attestation" and typed.get("types") == ATTESTATION_TYPES
+                  and typed.get("domain") == domain(s.chain_id, s.contract)
+                  and int(m["challengeId"]) == int(k[2])
+                  and str(m["submissionId"]).lower() == str(signed["submission_id"]).lower()
+                  and str(m["evidenceDigest"]).lower() == to_bytes32(signed["evidence_digest"]).lower()
+                  and int(m["expiry"]) == int(signed["expiry"])
+                  and recover_attestation_signer(typed, signed["signature"]) == self.me)
+        except Exception:
+            ok = False
+        if ok:
+            return []
+        log.warning("challenge %s: stored attestation %s does not verify against this signer's key", k[2], signed.get("attestation_id"))
+        return ["the signer's stored attestation for this challenge is not signed by this signer or does not match its "
+                "record; refusing (the signer's state was altered)"]
 
     # ------------------------------------------------------------------ chain
     def _read_chain(self, cid: str, sid: str) -> tuple[dict, dict | None]:
@@ -344,18 +417,25 @@ class Verifier:
         with closing(_db()) as conn:
             signed = _row(conn.execute("SELECT * FROM signed WHERE chain_id=? AND contract=? AND challenge_id=?", k).fetchone())
             if signed:
+                stored = self._stored_problems(k, signed)
+                if stored:
+                    return _refused(stored), None
                 if signed["submission_id"].lower() != sid:
                     return _refused(["this challenge already has an attestation for another submission"]), None
                 own = _row(conn.execute("SELECT * FROM verifications WHERE chain_id=? AND contract=? AND challenge_id=? "
                                         "AND submission_id=? AND status='verified' AND evidence_digest=?",
                                         (*k, sid, signed["evidence_digest"])).fetchone())
+                if own is not None and not self._mac_ok(k, sid, own):
+                    log.warning("challenge %s: verified row for %s lacks this signer's MAC; treated as legacy", k[2], sid)
+                    own = None
                 if own is not None:
                     # allow_start=False is the answer to the request that just waited for its own
                     # verification: the attestation is new to that caller, not a repeat.
                     return self._renew_or_repeat(conn, k, signed, own, ch, binding, now, repeat=allow_start), None
                 if signed["expiry"] - now > RENEW_MARGIN:
-                    # Signed by an earlier signer version, before independent verification:
-                    # it is already issued and still usable, so it is returned unchanged.
+                    # Signed by an earlier signer version, before independent verification (or
+                    # its verified row carries no valid MAC): already issued by this key and still
+                    # usable, so it is returned unchanged.
                     return _reply(200, self._attestation_body(conn, k, signed, None, repeated=True) | {"legacy": True}), None
                 # An expired legacy attestation is never renewed blindly: the same submission
                 # is verified independently below and signed afresh ("reverified").
@@ -546,8 +626,8 @@ class Verifier:
         conn.execute("BEGIN IMMEDIATE")
         try:
             conn.execute("UPDATE verifications SET status='verified', outcome='verified_violation', reason=?, evidence_digest=?, "
-                         "violated=?, finished_at=? WHERE chain_id=? AND contract=? AND challenge_id=? AND submission_id=?",
-                         (reason, own, violated, now, *k, sid))
+                         "violated=?, finished_at=?, mac=? WHERE chain_id=? AND contract=? AND challenge_id=? AND submission_id=?",
+                         (reason, own, violated, now, self._mac(k, sid, own), *k, sid))
             if prior:
                 conn.execute("UPDATE signed SET evidence_digest=?, attestation_id=?, typed_data=?, signature=?, expiry=?, created_at=? "
                              "WHERE chain_id=? AND contract=? AND challenge_id=? AND submission_id=?",
@@ -582,10 +662,16 @@ class Verifier:
     def _renew_or_repeat(self, conn, k: tuple, signed: dict, own: dict, ch: dict, binding: dict, now: int,
                          repeat: bool = True) -> JSONResponse:
         s = settings()
+        # Only a message this key really signed, backed by a verified row this key MACed, is
+        # ever repeated or extended (the caller checked both; checked again here as the gate).
+        problems = self._stored_problems(k, signed)
+        if not self._mac_ok(k, binding["submission_id"], own) or own["evidence_digest"] != signed["evidence_digest"]:
+            problems.append("the signer's verification record for this attestation is not authentic; refusing to renew")
+        if problems:
+            return _refused(problems)
         store = ArtifactStore()
         typed = json.loads(signed["typed_data"])
         m = typed["message"]
-        problems = []
         try:
             spec = store.get(ch["spec_digest"])
             bundle = _load_bundle(store, own["evidence_digest"])
