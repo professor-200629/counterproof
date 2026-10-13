@@ -17,12 +17,12 @@ Continue from this file and the actual code. Update after every milestone.
 | # | Task | State |
 |---|---|---|
 | 1 | Establish state, baseline checks | done (see log) |
-| 2 | Live-model attestation trust gap (signer independent k-of-n verification) | unit A implemented + reviewed; fix pass running (resumed after session restart) |
-| 3 | Expired attestation renewal | in unit A |
+| 2 | Live-model attestation trust gap (signer independent k-of-n verification) | done: merged (unit A); forged-evidence repro test; live fork run 3/3 by signer |
+| 3 | Expired attestation renewal | done: merged (unit A); controlled-clock tests + anvil acceptance of renewed signature |
 | 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | unit C running (worktree) |
 | 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | done (code merged; live replay + export recorded) |
 | 6 | External open-source agent + reproduction kit | blocked (no container engine); plan in docs/EXTERNAL_AGENT_PLAN.md; kit todo |
-| 7 | Judge experience (first screen, comparisons, metrics) | merged (unit D); browser check todo |
+| 7 | Judge experience (first screen, comparisons, metrics) | done: merged (unit D) + model-proposal display; 375 px checked in browser (compare overflow fixed) |
 | 8 | Docs, demo, pitch, submission | todo |
 | 9 | Verification, REMEDIATION_REPORT.md | todo |
 
@@ -48,6 +48,14 @@ Continue from this file and the actual code. Update after every milestone.
   not offered), so the dispatcher's in-code block was **not** exercised live (covered by scripted
   tests). Ordinary purchase on 0.2.0: 3 of 3 completed with payment, no rule violated. Exported
   pytest: 2 passed (repaired passes, original 0.1.1 still fails), live variant opt-in/skipped.
+- **Fork rehearsal, real Groq (2026-10-13 ~04:40 UTC):** `docs/evidence/fork-rehearsal-llm-20261013-100537.json`
+  - live-model challenge on a local anvil fork of Monad testnet (no real tx): evaluator 3/3, **signer's
+  own replays 3/3**, signed digest = signer's bundle, relayed settle, ERC-8004 feedback (forked
+  official registry, agent 2230), withdraw. Code at commit `2a8f1b6` + `--recorded` flag (pre unit C).
+- **Unit A's local anvil e2e (deterministic path, signer verification):** `docs/evidence/local-e2e-20261013-035546.json`.
+- **Measured testnet costs (recorded receipts, 102 gwei, gas billed on limit):** fund 0.0185, commit
+  0.0140, settle 0.0142, withdraw 0.0070, ERC-8004 feedback 0.0398, agent registration 0.0703 MON;
+  ~0.3 s blocks (38 blocks in 12 s).
 - **Offline checks of historical evidence:** `scripts/verify_evidence.py --chain` (local snapshot and
   `--url https://counterproof.vercel.app`): all checks passed (spec digests, seals, recheck_bundle,
   on-chain settled evidence digests, ERC-8004 feedback).
@@ -92,4 +100,7 @@ Continue from this file and the actual code. Update after every milestone.
 
 ## Next concrete task
 
-Wait for unit A fix + unit C + live replay; merge; run suites.
+Merge unit C (workflow `wf_7a974716-6bc`, worktree under .claude/worktrees); re-run all suites + local
+e2e on final code; final docs (README, STATUS, THREAT_MODEL, ARCHITECTURE, SUBMISSION) and
+docs/REMEDIATION_REPORT.md; then ask the owner once about publishing (push branch/merge to main,
+Vercel redeploy).
