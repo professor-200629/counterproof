@@ -16,12 +16,13 @@ ReputationRegistry. Source:
 https://github.com/professor-200629/counterproof. Read-only console with the recorded testnet
 run: https://counterproof.vercel.app.
 
-The earlier remediation release was published and recorded in `7ea1a96`. Submission
-fixes prepared in this session are local until a new release is authorized and published.
+The earlier remediation release was published and recorded in `7ea1a96`. The submission
+fixes were published 2026-10-13 ~17:15 UTC with the owner's approval: `main` at `114c2a3` on GitHub
+(branch `submission/final-fixes`), Vercel production redeployed with the new first screen.
 [docs/SUBMISSION_FINAL.md](docs/SUBMISSION_FINAL.md) supplies paste-ready fields, a
 187-character one-line description (current portal limit 200), precise links, build,
 licensing and AI disclosures, and remaining owner actions. The owner approved the MIT
-LICENSE; it is part of the local release package. Both videos are still pending.
+LICENSE; it is published (GitHub detects it as MIT). Both videos are still pending.
 
 ## Submission fixes and verification (current local work, 2026-10-13)
 

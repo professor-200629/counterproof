@@ -5,9 +5,11 @@ Continue from this file and the actual code. Update after every milestone.
 - **Current checkout:** `C:\dev\counterproof`, branch **`submission/final-fixes`** (from `main`
   @ `7ea1a96`). The Codex session's uncommitted submission fixes were preserved in commit
   `5adbbe6`; the fresh live re-run and re-verification docs follow on the same branch.
-- **Published baseline:** GitHub main matches `7ea1a96`; the preserved historical tag is
+- **Published:** GitHub main was `7ea1a96` before this session; the preserved historical tag is
   published. https://counterproof.vercel.app serves the 2026-10-13 read-only Monad Testnet
-  evidence snapshot. **The `submission/final-fixes` branch is not yet pushed or deployed.**
+  evidence snapshot. **Submission fixes published 2026-10-13 ~17:15 UTC** with the owner's approval: branch
+  `submission/final-fixes` pushed, `main` fast-forwarded to `114c2a3` and pushed, Vercel production
+  redeployed (new first screen; recorded evidence unchanged).
 - **Started:** 2026-10-12 21:39 UTC.
 - **Deadline (signed-in portal re-checked 2026-10-13):** dashboard and project overview show
   **14 October 2026, 09:29 GMT+5:30 (IST)**. The rules modal, version 3.0 updated 3 September,
@@ -28,7 +30,7 @@ Continue from this file and the actual code. Update after every milestone.
 | Open-source license | Owner explicitly approved MIT and affirmed authority on 2026-10-13; root LICENSE added locally. Dependency licenses retained. |
 | Fresh live re-run | Done 16:37 UTC: original R5 3/3, repaired 0/3 (3/3 completed), purchases 3/3 each; `docs/evidence/public-reproduction-live-20261013-163751.json`. Off-chain only. |
 | Independent re-verification (Claude Code) | Done: real clean clone + locked deps, all three modes, clean-clone web build, backend 214/4 skipped, contracts 58, web 173, browser desktop + 375 px, hosted chain check. |
-| Publication | Branch ready; push + merge to main + Vercel redeploy await the owner's yes. No new testnet transaction. |
+| Publication | Done 2026-10-13 ~17:15 UTC: branch + main (`114c2a3`) pushed, Vercel redeployed. Re-verified: hosted chain check all passed, hosted `--url` offline pass, 9 pages/downloads + 17 page assets 200, GitHub detects MIT, fresh GitHub clone offline + scripted pass. No new testnet transaction. |
 | External agent / independent human reproduction | Still pending; no external evaluation or outreach performed. |
 
 ## Earlier remediation milestones (dated 2026-10-12/13)
@@ -148,16 +150,13 @@ Continue from this file and the actual code. Update after every milestone.
 
 ## Next concrete task
 
-1. If the owner approves publication: `git push -u origin submission/final-fixes`, fast-forward
-   `main` to it and push, then `cd web && npx vercel deploy --prod --yes --build-env
-   NEXT_PUBLIC_SNAPSHOT=1 --build-env NEXT_PUBLIC_SNAPSHOT_SOURCE_URL=https://github.com/professor-200629/counterproof`.
-   Re-check: `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain`,
-   `scripts/live_repair_replay.py --mode offline --url https://counterproof.vercel.app`, curl the
-   pages and the GitHub blob links in SUBMISSION_FINAL.md; then change the "not yet pushed"
-   lines here, in STATUS.md, REMEDIATION_REPORT.md, REPRODUCE.md and SUBMISSION_FINAL.md.
-2. Owner: create the portal project, check the remaining fields (pitch limit, logo), record and
-   check both videos (DEMO_SCRIPT.md, PITCH.md), paste real links into SUBMISSION_FINAL.md and
-   submit before **14 October 09:29 IST**. The agent must not accept terms or submit the form.
-   A local snapshot preview for recording runs at http://127.0.0.1:3101 (read-only, no jobs).
+Nothing pending on the code side. Owner only:
+
+1. Create the portal project, check the remaining fields (pitch limit, logo upload limits),
+   record and check both videos (docs/DEMO_SCRIPT.md, docs/PITCH.md), paste real links into
+   docs/SUBMISSION_FINAL.md and submit before **14 October 09:29 IST** (03:59 UTC). The agent
+   must not accept terms or submit the form.
+2. A local snapshot preview for recording runs at http://127.0.0.1:3101 (read-only, no jobs); the
+   same first screen is live at https://counterproof.vercel.app.
 3. Do not mark videos, external-agent evaluation or outside reproduction complete until the
    actual artifacts or independent work exist.

@@ -287,14 +287,20 @@ a judge to do that. Historical exact-source execution remains pinned to
   in-app browser blocks Vercel's script assets (`ERR_BLOCKED_BY_CLIENT`; curl gets 200 for them), so
   the hosted page itself was not watched rendering. The identical build rendered correctly at
   localhost:3100, including at 375 px.
+- **Submission fixes (published 2026-10-13 ~17:15 UTC with the owner's approval):** branch
+  `submission/final-fixes` pushed; `main` fast-forwarded to `114c2a3` and pushed; Vercel production
+  redeployed. Re-checked afterwards: `verify_evidence.py --url https://counterproof.vercel.app --chain`
+  all passed; `live_repair_replay.py --mode offline --url https://counterproof.vercel.app` passed;
+  overview, challenges, challenge #3, compare, settlement, evidence pages and both regression downloads
+  return 200; all 17 assets of the overview page return 200 and one contains the new headline (the
+  in-app browser still blocks Vercel assets, so the hosted page was not watched rendering; the same
+  code rendered at localhost:3101); GitHub detects the MIT licence; a fresh clone from GitHub ran
+  offline and scripted modes successfully with no `data/` directory.
 - **External agent and independent human reproduction:** pending (see section 5).
 
 ## Owner actions
 
-1. **Publish the newly reviewed local fixes** when separately authorized. The earlier
-   branch/tag push, main merge and Vercel publication already happened; those are not
-   pending actions. Include the owner-approved MIT LICENSE and the README AI/attribution
-   disclosures in the release, then recheck hosted evidence and downloads.
+1. ~~Publish the reviewed fixes~~ — done 2026-10-13 ~17:15 UTC (see deployment status above).
 2. **Create the portal project and inspect the remaining final-form fields.** Current
    signed-in rules confirm 13 October 11:59 PM US Eastern / 14 October 9:29 AM IST,
    a single primary track, public code with OSI licence, a runnable prototype and a
@@ -320,7 +326,7 @@ a judge to do that. Historical exact-source execution remains pinned to
 - Frontend copy leads with the plain-language incident and compact recorded original/repair
   comparison; model proposals, forwarded marketplace calls and executed effects remain distinct.
   Web **173 passed**, typecheck/lint clean, production snapshot build clean; desktop and
-  375 × 812 checks found no overflow. These UI changes are local until published.
+  375 × 812 checks found no overflow. These UI changes were published 2026-10-13 ~17:15 UTC.
 - Hosted records plus Monad testnet read-back passed. All **52** published snapshot files
   returned HTTP 200 and matched the checkout byte-for-byte; overview, challenge #3, original
   evaluation, compare and settlement pages returned HTTP 200. This verifies the existing

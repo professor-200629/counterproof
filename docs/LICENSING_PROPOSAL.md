@@ -7,7 +7,7 @@ Public visibility alone does not grant an open-source license.
 
 On 2026-10-13 the owner explicitly chose the prepared MIT license and confirmed
 authority to license the original contributions. The text below was added to the
-root `LICENSE` file. Publication of this local release remains pending. Dependency
+root `LICENSE` file. It was published on `main` 2026-10-13 ~17:15 UTC. Dependency
 licenses remain their own; see the attribution in SUBMISSION_FINAL.md.
 
 Source: https://opensource.org/license/mit

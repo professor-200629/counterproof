@@ -43,12 +43,11 @@ eligibility approval is claimed.
 ## Publication and next actions
 
 GitHub main and the historical source tag were already published; the hosted recorded
-snapshot was published on 2026-10-13. The remaining fixes and final package prepared in
-this session are local until a new release is authorized and completed. The owner
-approved a repository-wide [MIT licence](../LICENSE); publish it with the reviewed
-release. The decision is recorded in [LICENSING_PROPOSAL.md](LICENSING_PROPOSAL.md).
+snapshot was published on 2026-10-13. The submission fixes, final package and the
+owner-approved repository-wide [MIT licence](../LICENSE) were published 2026-10-13 ~17:15 UTC
+(`main` at `114c2a3`; Vercel redeployed). The decision is recorded in [LICENSING_PROPOSAL.md](LICENSING_PROPOSAL.md).
 
-Owner: publish the reviewed fixes, verify current project/submission fields, record and
+Owner: verify current project/submission fields, record and
 check the two videos, paste real accessible video URLs, review declarations/terms, and
 submit before the cut-off. External-agent evaluation and independent human reproduction
 remain pending milestones. No users, revenue, testimonials or successful external

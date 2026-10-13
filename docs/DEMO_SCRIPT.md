@@ -89,8 +89,9 @@ actual completions and failures, with no fixture fallback.
 - [ ] Open evidence, transaction and download links beforehand; keep snapshot date,
   **read-only**, **Monad testnet** and versions legible. Hide credential files,
   wallet extensions, personal notifications and shell history containing secrets.
-- [ ] Rehearse the timed commands; record actual execution on camera. Until the local
-  changes are published, label the first screen “local preview of recorded evidence.”
+- [ ] Rehearse the timed commands; record actual execution on camera. The new first screen
+  is live at https://counterproof.vercel.app (published 2026-10-13); if you record the local
+  preview at http://127.0.0.1:3101 instead, it shows the same recorded evidence.
 - [ ] Label historical model segments as recorded: original evaluation took **236 s
   (3 min 56 s)** from timestamps; repaired attack took **129.9 s** and ordinary
   purchase **183.8 s** from the report. A condensed view must say “recorded,

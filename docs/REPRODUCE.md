@@ -48,8 +48,8 @@ backend/.venv/bin/python scripts/live_repair_replay.py --mode scripted
 ```
 
 Contract submodules, Node and Foundry are needed only for the full local chain flow below.
-For the submission fixes, use the source revision containing this guide and the updated
-script. If the public branch does not yet contain them, the final release remains to be published.
+`main` contains this guide and the reproduction command (published 2026-10-13, `114c2a3`); a
+fresh clone from GitHub was checked with offline and scripted modes after publication.
 
 ## Offline record verification
 

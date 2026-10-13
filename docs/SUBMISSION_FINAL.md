@@ -33,7 +33,7 @@ The hosted URL is a read-only evidence explorer. The technical video must demons
 actual local operation, with elapsed time, to support the runnable-prototype requirement.
 No claim is made that browsing the snapshot alone fulfils that requirement or guarantees
 eligibility. The owner approved a repository-wide **MIT** [LICENSE](../LICENSE) in this
-session. It is prepared locally and must be included in the reviewed publication. The
+session and published on `main` 2026-10-13 ~17:15 UTC; GitHub detects it as MIT. The
 decision is recorded in [LICENSING_PROPOSAL.md](LICENSING_PROPOSAL.md).
 
 ## Name, tagline and short description
@@ -152,9 +152,9 @@ identity is not a registration of repaired version 0.2.0.
 | Download regression JSON | https://counterproof.vercel.app/snapshot/api/regressions/reg_1f9d7ee2fbb64948/export.json |
 | Download regression pytest | https://counterproof.vercel.app/snapshot/api/regressions/reg_1f9d7ee2fbb64948/export.pytest.txt |
 
-The local changes prepared in this session need publication before `main` links expose
-the new clean-clone guide and final package. The historical hosted evidence and public
-code already exist; deployment history is recorded in [REMEDIATION_REPORT.md](REMEDIATION_REPORT.md).
+All links above were checked after publication (2026-10-13 ~17:15 UTC): GitHub pages and the
+hosted pages and downloads return 200, and a fresh public clone runs the offline and scripted
+modes. Deployment history is recorded in [REMEDIATION_REPORT.md](REMEDIATION_REPORT.md).
 
 ## Build-window, provenance, licences and limitations
 
@@ -171,11 +171,11 @@ is the disclosure the rules ask for. All evaluated adapter prompts and loops are
 team-written; no external-agent evaluation or independent human reproduction has been completed.
 
 The owner approved a repository-wide **MIT** [LICENSE](../LICENSE) for first-party code
-in this session; it must be published with the release. The reward contract source also
+in this session; it is published on `main`. The reward contract source also
 declares MIT. OpenZeppelin is an existing MIT dependency;
 forge-std retains its upstream MIT/Apache-2.0 notices. Backend and web dependency versions
 are retained in `backend/uv.lock` and `web/pnpm-lock.yaml`. The current portal explicitly
-requires an OSI-approved LICENSE, so publish the approved licence before submitting.
+requires an OSI-approved LICENSE; the published MIT licence meets that.
 The owner's licence decision is recorded in [LICENSING_PROPOSAL.md](LICENSING_PROPOSAL.md). Do not
 remove dependency notices. Proposed external adapters are documented, licence-checked
 candidates only; they are not shipped integrations.
@@ -226,14 +226,14 @@ with an external marketplace is claimed.
   purchases 3/3 each; report in `docs/evidence/`.
 - [x] Offline records verification and scripted adapter execution have distinct commands in
   [REPRODUCE.md](REPRODUCE.md); live mode is explicit and uses the reader's own key.
-- [ ] Publish the reviewed local fixes and verify the release URLs after publication.
+- [x] Reviewed fixes published (2026-10-13 ~17:15 UTC: `main` `114c2a3`, Vercel redeployed); release URLs re-verified.
 - [x] Current signed-in rules, deadline, runnable-prototype wording, public code/LICENSE
   requirement, 3-minute technical demo and 120/200-character Overview limits verified.
 - [ ] Owner creates the project and checks the final Submission fields, pitch and logo
   limits; no snapshot-only eligibility claim is made.
 - [x] Owner selected and authorized the repository-wide MIT licence; local LICENSE added.
-- [ ] Publish LICENSE and README attribution/AI disclosures; owner confirms requested
-  prior-work declarations and reviews legal terms.
+- [x] LICENSE and README attribution/AI disclosures published.
+- [ ] Owner confirms requested prior-work declarations and reviews legal terms.
 - [ ] Record and check both video files for duration, sound, legibility and honest cuts;
   upload them and paste real accessible links above.
 - [ ] Owner submits the portal form and saves its confirmation before the deadline.
