@@ -261,10 +261,14 @@ See [REPRODUCE.md](REPRODUCE.md). In short:
 ## Deployment and external-validation status
 
 - **Monad testnet:** unchanged since 2026-10-11, with no new transactions.
-- **GitHub:** the branch `remediation/judge-review` and tag `testnet-2026-10-11` exist only
-  locally.
-- **Vercel:** https://counterproof.vercel.app still shows the 2026-10-11 snapshot and console.
-  The new console and snapshot are built and tested locally only.
+- **GitHub (published 2026-10-13 ~10:30 UTC with the owner's approval):** branch
+  `remediation/judge-review` and tag `testnet-2026-10-11` pushed; merged into `main` (`8fee39e`) and pushed.
+- **Vercel (published at the same time):** https://counterproof.vercel.app serves the new console and
+  the 2026-10-13 snapshot. All key routes return 200, and
+  `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain` passes every check. The
+  in-app browser blocks Vercel's script assets (`ERR_BLOCKED_BY_CLIENT`; curl gets 200 for them), so
+  the hosted page itself was not watched rendering. The identical build rendered correctly at
+  localhost:3100, including at 375 px.
 - **External agent and independent human reproduction:** pending (see section 5).
 
 ## Owner actions

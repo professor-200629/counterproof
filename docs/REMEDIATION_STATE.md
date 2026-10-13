@@ -95,14 +95,14 @@ Continue from this file and the actual code. Update after every milestone.
 ## Blockers / owner actions
 
 - **Owner: confirm the submission cut-off and video limits in the portal** (public pages say only "13 Oct").
-- **Owner decision: publish** - push branch + tag, merge to main, redeploy Vercel (exact commands in
-  docs/REMEDIATION_REPORT.md "Owner actions"). Not done without explicit approval.
+- Published 2026-10-13 ~10:30 UTC with the owner's approval: branch + tag pushed, merged into main
+  (`8fee39e`) and pushed, Vercel redeployed; hosted evidence re-verified (all checks passed).
 - **Owner: record demo + pitch, submit.**
 - Blocked: external agent evaluation (no container engine on this machine); independent human
   reproduction (needs an outside person - no outreach sent).
 
 ## Next concrete task
 
-If the owner approves publishing: run the commands in docs/REMEDIATION_REPORT.md "Owner actions",
-then `scripts/verify_evidence.py --url https://counterproof.vercel.app --chain` and a browser check
-of the hosted first screen. Otherwise nothing is pending on the code side.
+Nothing pending on the code side. Owner: confirm the deadline in the portal, record demo + pitch,
+submit. Optional: open https://counterproof.vercel.app in a normal browser to see the first screen
+(the in-app browser blocks Vercel's scripts).
