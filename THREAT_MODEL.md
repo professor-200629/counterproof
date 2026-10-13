@@ -61,6 +61,18 @@ process, curious users of the web UI.
 
 ## Residual risks (accepted for the MVP, stated plainly)
 
+- **The signer process now also holds the model-provider key.** To re-run live-model replays
+  itself, the signer has its own model broker. The signing key and the provider key therefore live
+  in one trusted process; target children still get an empty environment and receive neither. A
+  stricter split (a separate verifier process without the signing key) is possible but was not
+  needed to close the forged-evidence gap.
+- **The signer trusts the model provider's responses.** Live-model verification is only as
+  independent as the provider: a compromised provider could steer both the worker's and the
+  signer's replays. The attestation states this evaluator's observation on this date, nothing more.
+- **Historical specs need the historical source.** Adding `llm-purchasing-agent@0.2.0` changed
+  `runner/host.py`, which is part of every adapter's pinned digest. The 2026-10-11 specs re-run
+  only from git tag `testnet-2026-10-11`; their recorded evidence re-checks from any commit.
+
 - **The demo gate is not an account system.** One shared judge passcode; sessions are
   revocable one by one (sign-out) but the passcode itself is rotated by restarting with a
   new one. Per-session limits are not per person: whoever holds the passcode can sign in
