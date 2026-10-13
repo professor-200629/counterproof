@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import subprocess
 import threading
 import time
 import traceback
@@ -22,11 +23,36 @@ from . import jobs, services
 from .db import connect, migrate, now
 from .evaluator import evaluate
 from .redact import redact
-from .runner.sandbox import DockerBackend
 from .strategies.catalog import STRATEGIES
 from .strategies.harness import Budget, Harness
 
 log = logging.getLogger("counterproof.worker")
+
+TARGET_LABEL = "label=counterproof.target=1"  # the label sandbox.DockerBackend gives every target container
+
+
+def sweep_stopped_targets() -> int:
+    """Remove target containers that have stopped but were not removed (a crashed worker).
+
+    Never a running one. Every target container carries the same label, whoever started it:
+    another worker, and the evaluator's signer, which replays each committed candidate itself
+    (minutes for a live model) before it signs. A child killed from outside ends its replay as
+    `target_crash`, which counts as a replay that did not violate, so sweeping running
+    containers could turn a valid finding into a final refusal. A running orphan is left
+    alone: its `docker run -i` client died with its worker, which closes the container's
+    stdin, so the target normally exits and `--rm` removes it; one that does not is left to
+    the operator rather than risk killing a live replay. `docker rm` is called without -f,
+    so a container that is running by then is refused, not killed.
+    """
+    try:
+        r = subprocess.run(["docker", "ps", "-aq", "--filter", TARGET_LABEL, "--filter", "status=exited",
+                            "--filter", "status=dead"], capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return 0
+    ids = r.stdout.split() if r.returncode == 0 else []
+    if ids:
+        subprocess.run(["docker", "rm", *ids], capture_output=True, timeout=30)
+    return len(ids)
 
 
 def _sync_domain_after_recovery(conn, changed: list[dict]) -> None:
@@ -62,7 +88,7 @@ class Worker:
         changed = jobs.recover(self.conn)
         _sync_domain_after_recovery(self.conn, changed)
         try:
-            DockerBackend.sweep_orphans()
+            sweep_stopped_targets()
         except Exception:
             pass
         for ch in changed:

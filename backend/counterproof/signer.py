@@ -43,6 +43,12 @@ in signer.sqlite (`verifications`). POST /attest answers:
   non-paying, and a later request retries it;
 * 502  the chain could not be read (nothing recorded).
 
+A replay child killed from outside the signer is indistinguishable, in the digest-bound
+runner, from a target that crashed: it ends as `target_crash`, a replay that did not
+violate, and can turn into a final 'rejected'. Nothing else may kill the signer's target
+children; the worker's container sweep removes only stopped target containers for that
+reason (`worker.sweep_stopped_targets`).
+
 Renewal: an attestation lives at most ATTESTATION_TTL seconds and never past the settlement
 deadline. A repeated request for the attested submission re-reads the chain and
 re-verifies the signer's stored evidence (digest, seal, `recheck_bundle`, binding against
