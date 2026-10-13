@@ -1209,6 +1209,9 @@ export interface RoleLimits {
   max_active_jobs: number;
   /** Model tokens per session per UTC day; 0 = no per-session limit. */
   daily_tokens: number;
+  /** Every session of this role together (signing in again does not reset these); 0 = none. */
+  all_sessions_active_jobs?: number;
+  all_sessions_daily_tokens?: number;
   max_queued_jobs: number;
   /** Judges only: the provider/model their live-model work is fixed to. */
   model?: string;
@@ -1221,7 +1224,13 @@ export interface SessionUsage {
   max_active_jobs: number | null;
   tokens_today: number;
   daily_tokens: number | null;
+  /** The lower of this session's own budget and what all judge sessions together have left. */
   tokens_remaining: number | null;
+  /** Judges: all judge sessions together. */
+  all_sessions_tokens_today?: number;
+  all_sessions_daily_tokens?: number | null;
+  all_sessions_active_jobs?: number;
+  all_sessions_max_active_jobs?: number | null;
   global_tokens_today: number;
   global_daily_ceiling: number;
   day: string;

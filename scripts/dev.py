@@ -73,12 +73,21 @@ def api_auth(env_file: dict) -> dict:
     sys.path.insert(0, str(ROOT / "scripts"))
     import operator_auth
 
+    from counterproof.auth import MIN_OPERATOR_TOKEN_CHARS, MIN_PASSCODE_CHARS
+
     op = os.environ.get("COUNTERPROOF_OPERATOR_TOKEN") or env_file.get("COUNTERPROOF_OPERATOR_TOKEN")
+    judge = os.environ.get("COUNTERPROOF_JUDGE_PASSCODE") or env_file.get("COUNTERPROOF_JUDGE_PASSCODE")
+    # The API ignores shorter secrets (auth.py); starting anyway would leave scripts/operator.py
+    # (the stop switch) or judge sign-in silently refused. Say so before anything starts.
+    for name, value, minimum in (("COUNTERPROOF_OPERATOR_TOKEN", op, MIN_OPERATOR_TOKEN_CHARS),
+                                 ("COUNTERPROOF_JUDGE_PASSCODE", judge, MIN_PASSCODE_CHARS)):
+        if value and len(value) < minimum:
+            raise SystemExit(f"{name} is shorter than {minimum} characters, so the API would ignore it. Use a longer "
+                             f"random value, or remove it and dev.py generates one for each launch.")
     op_src = "COUNTERPROOF_OPERATOR_TOKEN"
     if not op:
         op, op_src = secrets.token_urlsafe(32), "generated for this launch"
     operator_auth.write_token_file(op)
-    judge = os.environ.get("COUNTERPROOF_JUDGE_PASSCODE") or env_file.get("COUNTERPROOF_JUDGE_PASSCODE")
     passcode_file = ROOT / "data" / "judge.passcode"
     if judge:
         judge_src = "COUNTERPROOF_JUDGE_PASSCODE (environment or .env)"

@@ -67,6 +67,18 @@ def _spec_uses_model(spec: dict) -> bool:
     return spec["target"]["determinism"] == "stochastic" and bool((spec["target"].get("config") or {}).get("provider"))
 
 
+def _judge_spec(actor, spec: dict) -> None:
+    """Judges queue live-model work only on targets that run on the configured model (403)."""
+    from .limits import LimitError, judge_spec_check
+
+    if _role(actor) == "operator":
+        return
+    try:
+        judge_spec_check(spec)
+    except LimitError as e:
+        raise ServiceError(str(e), e.status) from e
+
+
 def store() -> ArtifactStore:
     return ArtifactStore()
 
@@ -195,19 +207,26 @@ def start_run(conn: sqlite3.Connection, cid: int, strategy: str, params: dict | 
     spec = get_spec(conn, c["spec_digest"])
     if time.time() > spec["deadlines"]["submission_deadline"]:
         raise ServiceError("the submission deadline has passed")
-    if mode == "deterministic" and strategy not in STRATEGIES:
+    # The worker picks the generator from the strategy, so the strategy decides whether a model
+    # is involved; the mode must agree with it (a model-assisted strategy under any other mode
+    # would skip the judge model lock and the token-ceiling check).
+    if mode not in ("deterministic", "model-assisted"):
+        raise ServiceError(f"unknown mode {mode!r}: deterministic or model-assisted")
+    generator = strategy == "model-assisted"
+    if generator != (mode == "model-assisted"):
+        raise ServiceError("the model-assisted strategy runs in model-assisted mode, and model-assisted mode runs only it")
+    if not generator and strategy not in STRATEGIES:
         raise ServiceError(f"unknown strategy {strategy}")
-    if mode == "model-assisted" and strategy != "model-assisted":
-        raise ServiceError("model-assisted mode uses the model-assisted strategy")
     spec_target = registry.get(f"{spec['target']['adapter']}@{spec['target']['version']}")
     if spec_target.requires_model and not settings().llm_provider:
         raise ServiceError("this target needs a live model: set COUNTERPROOF_LLM_PROVIDER and its API key", 409)
+    _judge_spec(actor, spec)
     defaults = STRATEGIES[strategy]["defaults"] if strategy in STRATEGIES else {}
-    model_involved = spec_target.requires_model or mode == "model-assisted"
+    model_involved = spec_target.requires_model or generator
     role = _role(actor)
     try:
         p = clamp_params(defaults | (params or {}), role, spec["scope"]["max_actions"])
-        if mode == "model-assisted" and role != "operator":
+        if generator and role != "operator":
             p = judge_run_model(p)
         b, clamped = clamp_budget(budget, role, model_involved)
     except LimitError as e:
@@ -298,6 +317,7 @@ def submit_candidate(conn: sqlite3.Connection, cand_id: str, actor=None) -> dict
     spec = get_spec(conn, c["spec_digest"])
     if time.time() > spec["deadlines"]["submission_deadline"]:
         raise ServiceError("the submission deadline has passed")
+    _judge_spec(actor, spec)
     body = cand["json"]
     if c["status"] == "offchain":
         sub = {"id": new_id("sub"), "source": "offchain", "commit_tx": None, "committed_at": now()}
@@ -344,6 +364,7 @@ def submit_external(conn: sqlite3.Connection, cid: int, candidate: dict, submiss
     norm, errors = validate_candidate(candidate, spec, c["spec_digest"])
     if norm is None:
         raise ServiceError("malformed candidate: " + "; ".join(errors[:5]))
+    _judge_spec(actor, spec)
     d = digest(norm)
     existing = conn.execute("SELECT e.id FROM evaluations e JOIN submissions s ON s.id=e.submission_id "
                             "WHERE s.challenge_id=? AND s.candidate_digest=?", (cid, d)).fetchone()
@@ -401,7 +422,9 @@ def retry_evaluation(conn: sqlite3.Connection, eid: str, actor=None) -> dict:
     attempts = list(summary.get("previous_attempts", [])) + [
         {"outcome": e["outcome"], "evidence_digest": e["evidence_digest"], "finished_at": e["finished_at"],
          "reason": summary.get("reason")}]
-    model_involved = _spec_uses_model(get_spec(conn, c["spec_digest"]))
+    spec = get_spec(conn, c["spec_digest"])
+    _judge_spec(actor, spec)
+    model_involved = _spec_uses_model(spec)
     with tx(conn):
         _capacity(conn, actor, model_involved)
         jid = jobs.enqueue(conn, "evaluation", {"evaluation_id": eid}, owner=e.get("owner") or _owner(actor))
@@ -556,6 +579,7 @@ def create_regression(conn: sqlite3.Connection, cand_id: str, target_key: str, a
         new_spec = build_spec(req)
     except (ValueError, KeyError) as e:
         raise ServiceError(f"cannot build regression spec: {e}") from e
+    _judge_spec(actor, new_spec)  # the replay runs on the original spec's model
     nd = spec_digest(new_spec)
     store().put(new_spec)
     rebound = dict(cand["json"], challenge_spec_digest=nd,
@@ -814,6 +838,10 @@ def _sync_cancelled_job(conn: sqlite3.Connection, job: dict, why: str) -> None:
                      "ON e.submission_id=s.id WHERE e.id=?) AND status='submitted'", (p["evaluation_id"],))
     elif job["kind"] == "regression" and p.get("regression_id"):
         conn.execute("UPDATE regressions SET status='cancelled', finished_at=? WHERE id=? AND status='queued'", (t, p["regression_id"]))
+    elif job["kind"] == "attestation" and p.get("evaluation_id"):
+        # The job row is the attestation request's only state; say why it ended.
+        log_activity(conn, "attestation.pending", f"Attestation not obtained: {why}; request it again", p.get("challenge_id"),
+                     p["evaluation_id"])
 
 
 def operator_stop(conn: sqlite3.Connection, actor=None, reason: str = "") -> dict:

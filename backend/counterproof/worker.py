@@ -88,6 +88,19 @@ def _effective_budget(run: dict, spec: dict) -> dict:
     return budget
 
 
+def _effective_params(run: dict, spec: dict) -> dict:
+    """Defence in depth for the run parameters, like _effective_budget: clamp them again to the
+    owner's role caps, and run a non-operator's model-assisted generator on the configured
+    provider/model whatever the stored row says."""
+    from .limits import clamp_params, configured_model, role_of
+
+    role = role_of(run.get("owner"))
+    params = clamp_params(run["params"] or {}, role, spec["scope"]["max_actions"])
+    if run["strategy"] == "model-assisted" and role != "operator":
+        params["provider"], params["model"] = configured_model()
+    return params
+
+
 def _bind_spend(client, owner: str | None, job_id: str | None) -> None:
     """Attribute the client's model calls to who queued the job (ledger, per-session budget)."""
     client.owner = owner
@@ -194,6 +207,7 @@ class Worker:
 
         challenger, recipient = challenger_identity()
         budget = Budget(**{k: v for k, v in _effective_budget(run, spec).items() if k in Budget.__dataclass_fields__})
+        params = _effective_params(run, spec)
         broker = broker_for_spec(spec, budget)
         if broker is not None:
             broker.client.cancel = cancel
@@ -208,13 +222,13 @@ class Worker:
         if run["strategy"] == "model-assisted":
             from .strategies.model_assisted import ModelAssisted
 
-            gen = ModelAssisted(spec, run["params"], budget)
+            gen = ModelAssisted(spec, params, budget)
             gen.client.cancel = cancel
             _bind_spend(gen.client, run.get("owner"), run.get("job_id"))
             proposals, model_label = gen.proposals(), gen.label
         else:
-            proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, run["params"]), None
-        h = Harness(spec=spec, spec_dgst=c["spec_digest"], strategy=run["strategy"], params=run["params"], budget=budget,
+            proposals, model_label = STRATEGIES[run["strategy"]]["fn"](spec, params), None
+        h = Harness(spec=spec, spec_dgst=c["spec_digest"], strategy=run["strategy"], params=params, budget=budget,
                     challenger=challenger, recipient=recipient, run_id=rid, cancel=cancel, progress=progress,
                     broker=broker, model_label=model_label)
         if run["strategy"] == "model-assisted":

@@ -61,6 +61,29 @@ describe("judge sign-in in the shell", () => {
   });
 });
 
+describe("judge limits text", () => {
+  it("names the limits all judge sessions share, and the model without claiming more", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SNAPSHOT", "");
+    vi.stubEnv("NEXT_PUBLIC_SNAPSHOT_MANIFEST", "");
+    const { judgeLimitsText } = await import("@/components/shell/judge-session");
+    const judge = { max_sequences: 50, max_wall_seconds: 300, max_model_calls: 60, max_model_tokens: 60000, max_actions: 8,
+      max_sequences_per_call: 5, max_active_jobs: 2, daily_tokens: 200000, all_sessions_active_jobs: 8,
+      all_sessions_daily_tokens: 500000, max_queued_jobs: 20, model: "groq/openai/gpt-oss-120b", temperature: 0, max_steps: 8 };
+    const text = judgeLimitsText({ authenticated: false, role: null, auth_configured: true, operator_stop: null, limits: { judge } });
+    expect(text).toContain("2 active jobs at a time");
+    expect(text).toContain("all judge sessions together 8 active jobs and 500,000 tokens a day");
+    expect(text).toContain("live-model work only on groq/openai/gpt-oss-120b");
+    expect(text).not.toContain("temperature");
+    // a server from before the all-sessions limits: the clause is simply absent
+    const older: Omit<typeof judge, "all_sessions_active_jobs" | "all_sessions_daily_tokens"> &
+      Partial<Pick<typeof judge, "all_sessions_active_jobs" | "all_sessions_daily_tokens">> = { ...judge };
+    delete older.all_sessions_active_jobs;
+    delete older.all_sessions_daily_tokens;
+    const before = judgeLimitsText({ authenticated: false, role: null, auth_configured: true, operator_stop: null, limits: { judge: older } });
+    expect(before).not.toContain("all judge sessions");
+  });
+});
+
 describe("refusals in the server's words", () => {
   it("titles 401/403/429/503 and keeps the detail; 401 offers sign-in", async () => {
     vi.stubEnv("NEXT_PUBLIC_SNAPSHOT", "");

@@ -12,6 +12,7 @@ ceilings and the operator stop are enforced server-side (limits.py).
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -99,12 +100,40 @@ def _read_actor(request: Request) -> auth.Actor | None:
 MAX_BODY_BYTES = 256 * 1024
 
 
-class _TooLarge(Exception):
+class _NonFinite(Exception):
     pass
 
 
+def _non_finite(_value) -> float:
+    raise _NonFinite()
+
+
+def has_non_finite_number(body: bytes) -> bool:
+    """True when a JSON body holds NaN, Infinity or a float that overflows to infinity (1e999).
+    Python's parser accepts all three; FastAPI would pass them to int() (OverflowError, a 500)
+    or store them as JSON that browsers cannot parse. A body that is not JSON is left to the
+    route's own parsing."""
+
+    def parse_float(s: str) -> float:
+        f = float(s)
+        if not math.isfinite(f):
+            raise _NonFinite()
+        return f
+
+    try:
+        json.loads(body, parse_constant=_non_finite, parse_float=parse_float)
+    except _NonFinite:
+        return True
+    except Exception:  # noqa: BLE001 - not JSON, or too deep: FastAPI answers that itself
+        return False
+    return False
+
+
 class BodyLimit:
-    """413 for request bodies over MAX_BODY_BYTES (declared or streamed)."""
+    """Request bodies: 413 over MAX_BODY_BYTES, declared or not, and 400 for a JSON body with a
+    non-finite number. The body (at most MAX_BODY_BYTES) is read here before the route sees it:
+    a chunked body over the limit is refused with 413 as soon as it passes the limit, instead of
+    failing inside FastAPI's own body parsing."""
 
     def __init__(self, app, max_bytes: int = MAX_BODY_BYTES):
         self.app, self.max = app, max_bytes
@@ -112,40 +141,43 @@ class BodyLimit:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        declared = dict(scope.get("headers") or []).get(b"content-length")
+        headers = dict(scope.get("headers") or [])
+        declared = headers.get(b"content-length")
         if declared is not None:
             try:
                 too_big = int(declared) > self.max
             except ValueError:
                 too_big = True
             if too_big:
-                return await self._refuse(send)
-            return await self.app(scope, receive, send)
-        seen, started = 0, False
-
-        async def counted():
-            nonlocal seen
+                return await self._refuse(send, 413, f"request body over {self.max // 1024} KB")
+        chunks, size, more = [], 0, True
+        while more:
             msg = await receive()
-            if msg["type"] == "http.request":
-                seen += len(msg.get("body", b""))
-                if seen > self.max:
-                    raise _TooLarge()
-            return msg
+            if msg["type"] != "http.request":  # the client went away before sending its body
+                return
+            chunk = msg.get("body", b"")
+            size += len(chunk)
+            if size > self.max:
+                return await self._refuse(send, 413, f"request body over {self.max // 1024} KB")
+            chunks.append(chunk)
+            more = msg.get("more_body", False)
+        body = b"".join(chunks)
+        if body and b"json" in headers.get(b"content-type", b"").lower() and has_non_finite_number(body):
+            return await self._refuse(send, 400, "JSON numbers must be finite: NaN and Infinity are not accepted")
+        delivered = False
 
-        async def tracked(msg):
-            nonlocal started
-            started = started or msg["type"] == "http.response.start"
-            await send(msg)
+        async def replay():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
 
-        try:
-            await self.app(scope, counted, tracked)
-        except _TooLarge:
-            if not started:
-                await self._refuse(send)
+        await self.app(scope, replay, send)
 
-    async def _refuse(self, send):
-        body = json.dumps({"detail": f"request body over {self.max // 1024} KB"}).encode()
-        await send({"type": "http.response.start", "status": 413,
+    async def _refuse(self, send, status: int, detail: str):
+        body = json.dumps({"detail": detail}).encode()
+        await send({"type": "http.response.start", "status": status,
                     "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
         await send({"type": "http.response.body", "body": body})
 
@@ -321,7 +353,7 @@ def create_session(body: SessionCreate, request: Request) -> JSONResponse:
     origin = auth.origin_of(request.headers)
     if request.headers.get("origin") and origin not in auth.allowed_origins():
         raise HTTPException(403, f"origin {origin} is not allowed to sign in here (COUNTERPROOF_ALLOWED_ORIGINS)")
-    client = auth.client_key(request.client.host if request.client else None, request.headers.get("x-forwarded-for"))
+    client = auth.client_of(request.client.host if request.client else None, request.headers.get("x-forwarded-for"))
     try:
         sid, rec = auth.sign_in(db(), body.passcode, client)
     except auth.AuthError as e:
@@ -412,10 +444,7 @@ def _spec_req(body: SpecRequest, actor: auth.Actor | None = None) -> dict:
         cap = limits.caps(actor.role).max_actions
         scope = dict(req.get("scope") or {})
         if "max_actions" in scope:
-            try:
-                scope["max_actions"] = max(1, min(int(scope["max_actions"]), cap))
-            except (TypeError, ValueError):
-                raise HTTPException(400, "scope.max_actions must be an integer") from None
+            scope["max_actions"] = max(1, min(limits.as_int(scope["max_actions"], "scope.max_actions"), cap))
             req["scope"] = scope
         return req
     if target and target.requires_model and not body.target_config:
@@ -533,7 +562,8 @@ class RunCreate(BaseModel):
     strategy: str
     params: dict | None = None
     budget: dict | None = None
-    mode: str = "deterministic"
+    # The worker picks the generator from `strategy`; services.start_run requires the two to agree.
+    mode: Literal["deterministic", "model-assisted"] = "deterministic"
 
 
 @app.post("/api/challenges/{cid}/runs")
@@ -541,7 +571,7 @@ def start_run(cid: int, body: RunCreate, actor: auth.Actor = Depends(current_act
     """The response's `budget` is the effective (clamped) budget; `budget_clamped` lists the
     fields the server lowered to the caller's role caps."""
     params = body.params
-    if body.mode == "model-assisted":
+    if body.mode == "model-assisted" and body.strategy == "model-assisted":
         from .providers import ChatClient, PROVIDERS
 
         if not actor.is_operator:
@@ -608,14 +638,15 @@ def retry_evaluation(eid: str, actor: auth.Actor = Depends(current_actor)) -> di
 
 
 @app.post("/api/evaluations/{eid}/attest")
-def attest(eid: str) -> JSONResponse:
+def attest(eid: str, actor: auth.Actor = Depends(current_actor)) -> JSONResponse:
     """200 with a usable attestation, or 202 {status: queued|verifying, job_id}: the signer
     replays the committed candidate itself before it signs (minutes for a live model), so
     the request is handed to a worker job that polls it. An expired attestation is renewed
-    the same way. The signer's token and key never appear in the response."""
+    the same way. The signer's token and key never appear in the response. A new job is
+    recorded against the caller and subject to the queue limits and the operator stop."""
     from . import chain
 
-    code, body = chain.start_attestation(db(), eid)
+    code, body = chain.start_attestation(db(), eid, actor=actor)
     return JSONResponse(json.loads(json.dumps(body, default=str)), status_code=code)
 
 

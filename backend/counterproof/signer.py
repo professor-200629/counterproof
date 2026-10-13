@@ -560,6 +560,10 @@ class Verifier:
             client = getattr(broker, "client", None)
             if client is not None:
                 client.cancel = self.stop
+                # Its model calls go through the same guard as the worker's (limits.py): the
+                # operator stop and the global token ceiling refuse them as "unavailable", which
+                # ends this verification as "failed" (retryable), never as a refusal.
+                client.owner = "signer"
             with self._slots:
                 bundle = evaluate(spec=spec, spec_dgst=spec_dgst, candidate=candidate, submission=binding,
                                   broker=broker, cancel=self.stop, on_replay=progress)

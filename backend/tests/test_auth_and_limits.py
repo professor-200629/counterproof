@@ -1,6 +1,7 @@
 """Authentication, authorization, server-side limits and the operator stop (auth.py, limits.py),
 plus the chain receipt checks for settle/refund/withdraw and failed-transaction reports."""
 
+import json
 import re
 import secrets
 import time
@@ -197,14 +198,52 @@ def test_operator_token_as_passcode_opens_an_operator_session(anon):
     assert anon.get("/api/session").json()["role"] == "operator"
 
 
-def test_passcode_brute_force_is_rate_limited(anon):
+def test_failed_passcodes_are_limited_but_never_lock_out_the_right_one(anon):
+    """Behind the Next.js /api rewrite every browser reaches the API from 127.0.0.1 and Next adds
+    no X-Forwarded-For (only X-Forwarded-Host), so the API cannot tell judges apart. Before, a
+    client-sent X-Forwarded-For chose the bucket (a fresh one per forged value), and five wrong
+    guesses from anyone refused even the right passcode to everyone. Now failures past the limit
+    get 429, a forged header is no new client, and the right passcode is still accepted."""
     for _ in range(5):
         assert anon.post("/api/session", json={"passcode": "guess"}).status_code == 401
-    r = anon.post("/api/session", json={"passcode": JUDGE_PASSCODE})  # even the right one, for now
+    r = anon.post("/api/session", json={"passcode": "guess"})
     assert r.status_code == 429 and int(r.headers["retry-after"]) > 0
-    # another client (behind the loopback proxy, by X-Forwarded-For) is not locked out
-    ok = anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers={"X-Forwarded-For": "10.0.0.7"})
-    assert ok.status_code == 200
+    forged = anon.post("/api/session", json={"passcode": "guess"}, headers={"X-Forwarded-For": "10.0.0.7"})
+    assert forged.status_code == 429  # no fresh bucket of guesses for a made-up address
+    ok = anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers={"Origin": ORIGIN})
+    assert ok.status_code == 200 and ok.json()["role"] == "judge"
+
+
+def test_behind_a_trusted_proxy_each_client_has_its_own_limit(anon, monkeypatch):
+    """COUNTERPROOF_TRUSTED_PROXY=1: a proxy in front appends the real client address, so the
+    rightmost X-Forwarded-For entry identifies the client (anything left of it is forgeable).
+    Such a client is refused for its window, even with the right passcode; others are not, and
+    the overall limit never refuses the right passcode."""
+    monkeypatch.setenv("COUNTERPROOF_TRUSTED_PROXY", "1")
+    a = {"X-Forwarded-For": "6.6.6.6, 10.0.0.1"}
+    for _ in range(5):
+        assert anon.post("/api/session", json={"passcode": "guess"}, headers=a).status_code == 401
+    assert anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers=a).status_code == 429
+    same_client = {"X-Forwarded-For": "1.2.3.4, 10.0.0.1"}  # a different forged prefix, the same proxy hop
+    assert anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers=same_client).status_code == 429
+    assert anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers={"X-Forwarded-For": "10.0.0.2"}).status_code == 200
+    for i in range(30):  # fill the overall bucket from many clients
+        anon.post("/api/session", json={"passcode": "guess"}, headers={"X-Forwarded-For": f"10.1.0.{i}"})
+    assert anon.post("/api/session", json={"passcode": "guess"}, headers={"X-Forwarded-For": "10.2.0.1"}).status_code == 429
+    assert anon.post("/api/session", json={"passcode": JUDGE_PASSCODE}, headers={"X-Forwarded-For": "10.2.0.2"}).status_code == 200
+
+
+def test_secrets_shorter_than_the_minimum_are_ignored(anon, monkeypatch):
+    """Guessing is stopped by the secrets' length, so a short one is refused as if unset (and
+    scripts/dev.py will not start with one)."""
+    monkeypatch.setenv("COUNTERPROOF_JUDGE_PASSCODE", "elevenchars")
+    r = anon.post("/api/session", json={"passcode": "elevenchars"})
+    assert r.status_code == 401 and "shorter than 12 characters" in r.json()["detail"] and "elevenchars" not in r.text
+    assert anon.post("/api/session", json={"passcode": OPERATOR_TOKEN}).json()["role"] == "operator"  # the operator still can
+    monkeypatch.setenv("COUNTERPROOF_OPERATOR_TOKEN", "op-" + "t" * 20)
+    r = anon.post("/api/specs/preview", json=spec_body(), headers={"Authorization": "Bearer op-" + "t" * 20})
+    assert r.status_code == 401 and "shorter than 24 characters" in r.json()["detail"] and "op-ttt" not in r.text
+    assert "shorter than 12 characters" in r.json()["detail"]  # neither secret counts: everything is refused
 
 
 def test_sign_in_from_a_foreign_origin_is_refused(anon):
@@ -311,6 +350,86 @@ def test_judge_specs_use_the_configured_model_only(judge, operator, live_model_e
     assert ok["params"]["model"] == "openai/gpt-oss-120b" and ok["params"]["sequences_per_call"] == 5
 
 
+EXPENSIVE = {"provider": "openrouter", "model": "some/expensive-model"}
+
+
+def test_run_mode_must_agree_with_the_strategy(judge, operator, live_model_env):
+    """The worker picks the generator from the strategy. Before, strategy "model-assisted" with
+    any other mode (e.g. "x") skipped the judge model lock and the token-ceiling check: the run
+    was stored with the caller's provider/model and the worker called that model."""
+    from counterproof import services
+    from counterproof.db import connect
+
+    ch = new_challenge(judge.post)
+    runs = f"/api/challenges/{ch['id']}/runs"
+    assert judge.post(runs, {"strategy": "model-assisted", "mode": "x", "params": EXPENSIVE}).status_code == 422
+    r = judge.post(runs, {"strategy": "model-assisted", "mode": "deterministic", "params": EXPENSIVE})
+    assert r.status_code == 400 and "model-assisted mode" in r.json()["detail"]
+    assert judge.post(runs, {"strategy": "sequence-explorer", "mode": "model-assisted"}).status_code == 400
+    with pytest.raises(services.ServiceError) as e:  # in-process callers are held to the same rule
+        services.start_run(connect(), ch["id"], "model-assisted", dict(EXPENSIVE), mode="x")
+    assert e.value.status == 400
+    assert judge.get(f"/api/challenges/{ch['id']}").json()["runs"] == []
+    # the one valid spelling is locked to the configured model for a judge
+    ok = judge.post(runs, {"strategy": "model-assisted", "mode": "model-assisted", "params": {"provider": "groq"}}).json()
+    assert (ok["params"]["provider"], ok["params"]["model"]) == ("groq", "openai/gpt-oss-120b")
+
+
+def test_worker_runs_a_judges_generator_on_the_configured_model(judge, live_model_env, monkeypatch):
+    """Defence in depth: whatever a judge-owned run row says (an old row, an edited database),
+    the worker's generator calls the configured provider/model, with params clamped again."""
+    from counterproof import services
+    from counterproof.db import connect, dumps
+    from counterproof.worker import _effective_params
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-" + "k" * 40)
+    monkeypatch.setenv("COUNTERPROOF_LLM_TPM", "0")
+    calls = []
+
+    def provider(url, json=None, **_k):
+        calls.append((url, json["model"]))
+        return _Resp(401, {"error": "test provider refuses"})  # not retried: the generator stops at once
+
+    monkeypatch.setattr(providers.httpx, "post", provider)
+    ch = new_challenge(judge.post)
+    run = judge.post(f"/api/challenges/{ch['id']}/runs", {"strategy": "model-assisted", "mode": "model-assisted"}).json()
+    conn = connect()
+    conn.execute("UPDATE runs SET params=? WHERE id=?", (dumps(EXPENSIVE | {"sequences_per_call": 50}), run["id"]))
+    stored = services.get_run(conn, run["id"])
+    p = _effective_params(stored, services.get_spec(conn, ch["spec_digest"]))
+    assert (p["provider"], p["model"], p["sequences_per_call"]) == ("groq", "openai/gpt-oss-120b", 5)
+    assert _effective_params(stored | {"owner": "operator"}, services.get_spec(conn, ch["spec_digest"]))["model"] == EXPENSIVE["model"]
+    drain()
+    assert calls and all("api.groq.com" in u and m == "openai/gpt-oss-120b" for u, m in calls), calls
+
+
+def test_judges_queue_model_work_only_on_targets_that_use_the_configured_model(judge, operator, live_model_env):
+    """An operator-published challenge may name another model; a judge cannot spend on it."""
+    from counterproof import services
+    from counterproof.canonical import digest
+    from counterproof.db import connect
+    from counterproof.spec import validate_candidate
+
+    other = {"provider": "groq", "model": "some-expensive-model", "temperature": 0, "max_steps": 8}
+    ch = new_challenge(op_post(operator), LLM, target_config=other)
+    r = judge.post(f"/api/challenges/{ch['id']}/runs", {"strategy": "retry-replay"})
+    assert r.status_code == 403 and "some-expensive-model" in r.json()["detail"]
+    cand = make_candidate(ch["spec_digest"], BUDGET_ATTACK, "R1")
+    assert judge.post(f"/api/challenges/{ch['id']}/submissions", {"candidate": cand}).status_code == 403
+    conn = connect()
+    norm, _ = validate_candidate(cand, services.get_spec(conn, ch["spec_digest"]), ch["spec_digest"])
+    [cand_id] = services.save_candidates(conn, ch["id"], None, [{"digest": digest(norm), "candidate": norm,
+                                                                 "local_check": {"summary": "test"}}])
+    assert judge.post(f"/api/candidates/{cand_id}/submit").status_code == 403
+    r = judge.post("/api/regressions", {"candidate_id": cand_id, "target": "llm-purchasing-agent@0.2.0"})
+    assert r.status_code == 403 and "some-expensive-model" in r.json()["detail"]  # the replay would use the same model
+    assert judge.get(f"/api/challenges/{ch['id']}").json()["runs"] == []
+    assert operator.post(f"/api/challenges/{ch['id']}/runs", json={"strategy": "retry-replay"}).status_code == 200
+    # an operator-published challenge on the configured model is open to judges
+    same = new_challenge(op_post(operator), LLM)
+    assert judge.post(f"/api/challenges/{same['id']}/runs", {"strategy": "retry-replay"}).status_code == 200
+
+
 # ----------------------------------------------------------------------------- capacity
 def test_per_session_active_jobs_and_the_global_queue_limit(judge, judge_b, operator, monkeypatch):
     ch = new_challenge(judge.post)
@@ -326,6 +445,64 @@ def test_per_session_active_jobs_and_the_global_queue_limit(judge, judge_b, oper
     assert full.status_code == 429 and "queue is full" in full.json()["detail"]
     cand = make_candidate(ch["spec_digest"], BUDGET_ATTACK, "R1")
     assert judge_b.post(f"/api/challenges/{ch['id']}/submissions", {"candidate": cand}).status_code == 429
+
+
+def test_signing_in_again_does_not_reset_what_all_judges_may_use(api_app, operator, monkeypatch):
+    """Every correct passcode opens a new session with fresh per-session quotas. Before, four
+    sessions held 8 jobs against a per-session cap of 2, could fill the global queue (and lock
+    the operator's scripts out) and spend the whole daily ceiling. All judge sessions together
+    now share role-wide limits that sit below the global ones."""
+    from counterproof.db import connect
+
+    monkeypatch.setenv("COUNTERPROOF_JUDGE_TOTAL_ACTIVE_JOBS", "3")
+    monkeypatch.setenv("COUNTERPROOF_MAX_QUEUED_JOBS", "5")
+    with TestClient(api_app.app) as c1, TestClient(api_app.app) as c2, TestClient(api_app.app) as c3:
+        j1, j2, j3 = Judge(c1), Judge(c2), Judge(c3)
+        ch = new_challenge(j1.post)
+        runs = f"/api/challenges/{ch['id']}/runs"
+        assert j1.post(runs, {"strategy": "sequence-explorer"}).status_code == 200
+        assert j1.post(runs, {"strategy": "retry-replay"}).status_code == 200
+        assert j2.post(runs, {"strategy": "retry-replay"}).status_code == 200
+        r = j3.post(runs, {"strategy": "retry-replay"})  # a brand-new session, its own quota untouched
+        assert r.status_code == 429 and "judge sessions together" in r.json()["detail"]
+        usage = j3.get("/api/session").json()["usage"]
+        assert usage["active_jobs"] == 0 and usage["all_sessions_active_jobs"] == 3 and usage["all_sessions_max_active_jobs"] == 3
+        # the queue the judges cannot fill still has room for the operator
+        assert operator.post(runs, json={"strategy": "retry-replay"}).status_code == 200
+        assert operator.post(runs, json={"strategy": "retry-replay"}).status_code == 200
+        assert operator.post(runs, json={"strategy": "retry-replay"}).status_code == 429  # the global limit (5)
+        # tokens: all judge sessions together, below the global ceiling
+        monkeypatch.setenv("COUNTERPROOF_JUDGE_TOTAL_DAILY_TOKENS", "100")
+        limits.record_usage(j1.session["owner"], None, "groq", "m", 60, 40)
+        why = limits.guard_model_call(j3.session["owner"])
+        assert why and "judge sessions" in why and "cost ceiling reached" in why
+        assert limits.guard_model_call("operator") is None and limits.guard_model_call("signer") is None
+        assert limits.guard_model_call(None) is None
+        with pytest.raises(limits.LimitError) as e:  # a new model-using job for a fresh session is refused too
+            limits.check_capacity(connect(), "judge:sess_fresh", model_involved=True)
+        assert e.value.status == 429
+        s = j3.get("/api/session").json()
+        assert s["usage"]["tokens_remaining"] == 0 and s["usage"]["all_sessions_tokens_today"] == 100
+        assert s["limits"]["all_sessions_daily_tokens"] == 100 and s["limits"]["all_sessions_active_jobs"] == 3
+
+
+def test_every_forwarded_limit_can_be_set_in_dotenv():
+    """Limit names that contain a secret hint ("TOKEN") must be listed as not secret, or the
+    .env loader silently drops them and the default applies."""
+    from counterproof.config import NOT_SECRET, SECRET_HINTS
+
+    looks_secret = {k for k in limits.FORWARDED_SETTINGS if any(h in k for h in SECRET_HINTS)}
+    assert looks_secret and looks_secret <= NOT_SECRET, looks_secret - NOT_SECRET
+
+
+def test_judge_wide_defaults_leave_the_operator_headroom():
+    j = limits.caps("judge")
+    assert 0 < j.all_sessions_active_jobs < limits.max_queued_jobs()
+    assert 0 < j.all_sessions_daily_tokens < limits.daily_token_ceiling()
+    op = limits.caps("operator")
+    assert op.all_sessions_active_jobs == 0 and op.all_sessions_daily_tokens == 0
+    assert limits.role_of("signer") == "operator" and limits.role_of("judge:sess_x") == "judge"
+    assert limits.role_of("mystery:x") == "judge"  # unknown owners get the tighter caps
 
 
 # ----------------------------------------------------------------------------- operator stop
@@ -411,6 +588,36 @@ def test_cancelled_evaluation_can_be_retried_after_a_stop(operator, judge):
     assert judge.post(f"/api/evaluations/{ev['id']}/retry").json()["status"] == "queued"
     drain()
     assert judge.get(f"/api/evaluations/{ev['id']}").json()["outcome"] == "verified_violation"
+
+
+def test_attestation_requests_are_owned_limited_and_closed_by_the_stop(judge, operator):
+    """Unit A's attestation job (the worker polls the signer for up to an hour): a caller's
+    request is recorded against its session and counts toward its active jobs, the operator
+    stop refuses new ones (503), and a queued one cancelled by the stop says why in the activity."""
+    from counterproof.db import connect, dumps
+
+    ch = new_challenge(judge.post)
+    ev = judge.post(f"/api/challenges/{ch['id']}/submissions", {"candidate": make_candidate(ch["spec_digest"], BUDGET_ATTACK, "R1")}).json()
+    drain()
+    conn = connect()
+    assert judge.get(f"/api/evaluations/{ev['id']}").json()["outcome"] == "verified_violation"
+    # as if the challenge were funded on chain and the finding reward-eligible
+    conn.execute("UPDATE challenges SET status='funded', onchain_id='9' WHERE id=?", (ch["id"],))
+    conn.execute("UPDATE evaluations SET summary=? WHERE id=?", (dumps({"outcome": "verified_violation", "reward_eligible": True}), ev["id"]))
+    r = judge.post(f"/api/evaluations/{ev['id']}/attest")
+    assert r.status_code == 202 and r.json()["status"] == "queued", r.text
+    job = r.json()["job"]
+    assert job["kind"] == "attestation" and job["owner"] == judge.session["owner"]
+    assert judge.get("/api/session").json()["usage"]["active_jobs"] == 1
+    assert judge.post(f"/api/evaluations/{ev['id']}/attest").json()["job_id"] == job["id"]  # one active request, not two
+    stopped = operator.post("/api/operator/stop", json={"reason": "demo over"}).json()
+    assert {j["id"]: j["to"] for j in stopped["jobs"]}[job["id"]] == "cancelled"
+    notes = [a["message"] for a in judge.get(f"/api/challenges/{ch['id']}").json()["activity"] if a["kind"] == "attestation.pending"]
+    assert notes and "operator stop" in notes[0]
+    r = judge.post(f"/api/evaluations/{ev['id']}/attest")
+    assert r.status_code == 503 and "operator stop in effect" in r.json()["detail"]
+    operator.post("/api/operator/resume")
+    assert judge.post(f"/api/evaluations/{ev['id']}/attest").status_code == 202
 
 
 # ----------------------------------------------------------------------------- token ledger and ceilings
@@ -665,6 +872,61 @@ def test_failed_tx_reports_are_validated_and_never_overwrite_a_confirmed_row(onc
     assert conn.execute("SELECT status FROM transactions WHERE hash=?", (new,)).fetchone()["status"] == "failed"
 
 
+def _second_challenge(conn, spec_digest: str, status: str = "awaiting_funding") -> int:
+    return conn.execute("INSERT INTO challenges(spec_digest, status, network, chain_id, contract, created_at, updated_at) "
+                        "VALUES (?,?,?,?,?,?,?)", (spec_digest, status, "anvil-local", 31337, CONTRACT, 0, 0)).lastrowid
+
+
+def _created(spec_digest: str, spec: dict, challenge_id: int, address: str = CONTRACT) -> dict:
+    from counterproof.canonical import to_bytes32
+
+    return {"ChallengeCreated": [_ev(address, challengeId=challenge_id, specDigest=bytes.fromhex(to_bytes32(spec_digest)[2:]),
+                                     evaluator=spec["evaluator"]["address"], reward=int(spec["reward"]["amount_wei"]),
+                                     submissionDeadline=spec["deadlines"]["submission_deadline"],
+                                     settlementDeadline=spec["deadlines"]["settlement_deadline"],
+                                     publisher=spec["publisher"]["address"])]}
+
+
+def test_receipts_never_rewrite_another_challenges_confirmed_transaction(onchain_challenge, monkeypatch):
+    """verify_funding's mismatch branch used to overwrite a confirmed row's detail when the same
+    hash was offered as another challenge's funding; a receipt also kept the kind and challenge
+    of a row the browser had filed first. And the same funding offered by a second challenge on
+    the same spec failed on the database's unique index (500)."""
+    from counterproof import chain, services
+
+    conn, c = onchain_challenge
+    spec = services.get_spec(conn, c["spec_digest"])
+    h = "0x" + "dd" * 32
+    chain._track(conn, h, "fund", "confirmed", c["id"], "0x" + "11" * 20, {"onchain_id": "3", "reward_wei": "1000"}, 7)
+    before = dict(conn.execute("SELECT * FROM transactions WHERE hash=?", (h,)).fetchone())
+    # another challenge, on another spec, offers the same transaction as its funding
+    other_spec, other_d = make_spec(title="Another challenge")
+    services.store().put(other_spec)
+    conn.execute("INSERT INTO specs(digest, format, title, target_key, json, created_at) VALUES (?,?,?,?,?,?)",
+                 (other_d, other_spec["format"], other_spec["title"], "ref-purchasing-agent@1.0.0", services.dumps(other_spec), 0))
+    other = services.get_challenge(conn, _second_challenge(conn, other_d))
+    _receipt_with(monkeypatch, CONTRACT, **_created(c["spec_digest"], spec, 3))
+    with pytest.raises(chain.ChainError, match="spec digest on chain differs"):
+        chain.verify_funding(conn, other, other_spec, h)
+    assert dict(conn.execute("SELECT * FROM transactions WHERE hash=?", (h,)).fetchone()) == before
+    # a second challenge on the same spec: a clear refusal, not an integrity error
+    twin = services.get_challenge(conn, _second_challenge(conn, c["spec_digest"]))
+    with pytest.raises(chain.ChainError, match="already funds challenge"):
+        chain.verify_funding(conn, twin, spec, h)
+    assert services.get_challenge(conn, twin["id"])["status"] == "awaiting_funding"
+    # a ChallengeCreated log emitted by another contract does not fund anything
+    _receipt_with(monkeypatch, CONTRACT, **_created(other_d, other_spec, 11, address=OTHER))
+    with pytest.raises(chain.ChainError, match="no ChallengeCreated event from the CounterProof contract"):
+        chain.verify_funding(conn, other, other_spec, "0x" + "de" * 32)
+    # the browser filed a hash first (wrong kind, wrong challenge); the receipt corrects both
+    h2 = "0x" + "ee" * 32
+    chain.record_failed_tx(conn, other["id"], h2, "withdraw", "wallet said no")
+    _receipt_with(monkeypatch, CONTRACT, ChallengeRefunded=[_ev(CONTRACT, challengeId=3, publisher=PUBLISHER, reward=5)])
+    assert chain.verify_tx(conn, c, h2, "refund")["status"] == "confirmed"
+    row = conn.execute("SELECT kind, challenge_id, status, error FROM transactions WHERE hash=?", (h2,)).fetchone()
+    assert (row["kind"], row["challenge_id"], row["status"], row["error"]) == ("refund", c["id"], "confirmed", None)
+
+
 # ----------------------------------------------------------------------------- hosts and body size
 def test_unknown_host_and_forwarded_host_are_refused(anon):
     assert anon.get("/api/health", headers={"Host": "evil.example"}).status_code == 400
@@ -676,6 +938,52 @@ def test_unknown_host_and_forwarded_host_are_refused(anon):
 def test_oversized_bodies_are_refused(operator):
     big = {"title": "x" * (300 * 1024)}
     assert operator.post("/api/specs/preview", json=big).status_code == 413
+    json_ct = {"Content-Type": "application/json"}
+
+    def chunks():  # no Content-Length: a chunked body
+        for _ in range(40):
+            yield b"x" * 10_000
+
+    # Before, a chunked body over the limit failed inside FastAPI's body read and came back as
+    # 400 "There was an error parsing the body"; it is refused as too large, as declared ones are.
+    r = operator.post("/api/specs/preview", content=chunks(), headers=json_ct)
+    assert r.status_code == 413 and "256 KB" in r.json()["detail"]
+    body = json.dumps(spec_body()).encode()
+    r = operator.post("/api/specs/preview", content=iter([body[:50], body[50:]]), headers=json_ct)
+    assert r.status_code == 200, r.text  # a chunked body under the limit reaches the route intact
+
+
+def test_non_finite_json_numbers_are_refused_not_a_server_error(judge, operator):
+    """Python's JSON parser accepts NaN and Infinity (and 1e999 overflows to inf). Before, an
+    Infinity budget or scope.max_actions reached int() and raised OverflowError (500), and a NaN
+    run parameter was stored as JSON browsers cannot parse."""
+    from counterproof import services
+    from counterproof.db import connect
+
+    ch = new_challenge(judge.post)
+    h = {"X-CSRF-Token": judge.csrf, "Origin": ORIGIN, "Content-Type": "application/json"}
+    for raw in ('{"strategy": "sequence-explorer", "budget": {"max_sequences": Infinity}}',
+                '{"strategy": "sequence-explorer", "budget": {"max_sequences": -Infinity}}',
+                '{"strategy": "sequence-explorer", "budget": {"max_sequences": 1e999}}',
+                '{"strategy": "sequence-explorer", "params": {"note": NaN}}'):
+        r = judge.c.post(f"/api/challenges/{ch['id']}/runs", content=raw, headers=h)
+        assert r.status_code == 400 and "finite" in r.json()["detail"], (raw, r.status_code, r.text)
+    raw = json.dumps(spec_body(scope={"max_actions": 4})).replace('"max_actions": 4', '"max_actions": Infinity')
+    assert judge.c.post("/api/specs/preview", content=raw, headers=h).status_code == 400
+    assert judge.get(f"/api/challenges/{ch['id']}").json()["runs"] == []
+    # in-process callers get a 400 too, never an OverflowError
+    with pytest.raises(services.ServiceError) as e:
+        services.start_run(connect(), ch["id"], "sequence-explorer", budget={"max_sequences": float("inf")})
+    assert e.value.status == 400
+    with pytest.raises(services.ServiceError) as e:
+        services.start_run(connect(), ch["id"], "sequence-explorer", params={"max_length": float("-inf")})
+    assert e.value.status == 400
+    with pytest.raises(limits.LimitError) as e:
+        limits.judge_target_config({"max_steps": float("inf")}, True)
+    assert e.value.status == 400
+    # finite floats and large integers are untouched by the guard
+    ok = operator.post(f"/api/challenges/{ch['id']}/runs", json={"strategy": "retry-replay", "budget": {"max_sequences": 10**30}})
+    assert ok.status_code == 200 and ok.json()["budget"]["max_sequences"] == 100000
 
 
 def test_ledger_survives_an_unmigrated_database(tmp_path, monkeypatch):

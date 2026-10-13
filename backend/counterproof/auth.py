@@ -12,7 +12,12 @@ This is a demo gate, not an account system:
 Cookie-authenticated mutations also need ``X-CSRF-Token`` equal to the session's token and an
 Origin (or Referer) listed in COUNTERPROOF_ALLOWED_ORIGINS. CORS is not authentication.
 
-If neither secret is configured every mutation is refused (fail closed).
+If neither secret is configured every mutation is refused (fail closed). A secret shorter than
+its minimum (operator token 24 characters, judge passcode 12) is ignored, as if unset: guessing
+is stopped by the secrets' length, not by the attempt limiter. Behind the Next.js /api proxy
+every browser reaches the API from 127.0.0.1 with no X-Forwarded-For, so the limiter cannot
+tell clients apart there; it slows failed attempts but never refuses the correct passcode,
+otherwise anyone could keep every judge locked out.
 """
 
 from __future__ import annotations
@@ -59,16 +64,39 @@ class Actor:
 
 
 # ---------------------------------------------------------------------------- configuration
+# Minimum lengths. scripts/dev.py generates 43 and 12 random URL-safe characters (256 and 72
+# bits). The bearer token is checked on every request with no attempt limit, so it must be long.
+MIN_OPERATOR_TOKEN_CHARS = 24
+MIN_PASSCODE_CHARS = 12
+_SECRETS = (("COUNTERPROOF_OPERATOR_TOKEN", MIN_OPERATOR_TOKEN_CHARS), ("COUNTERPROOF_JUDGE_PASSCODE", MIN_PASSCODE_CHARS))
+
+
+def _secret(name: str, minimum: int) -> str | None:
+    v = os.environ.get(name) or None
+    return v if v is not None and len(v) >= minimum else None
+
+
 def operator_token() -> str | None:
-    return os.environ.get("COUNTERPROOF_OPERATOR_TOKEN") or None
+    return _secret("COUNTERPROOF_OPERATOR_TOKEN", MIN_OPERATOR_TOKEN_CHARS)
 
 
 def judge_passcode() -> str | None:
-    return os.environ.get("COUNTERPROOF_JUDGE_PASSCODE") or None
+    return _secret("COUNTERPROOF_JUDGE_PASSCODE", MIN_PASSCODE_CHARS)
+
+
+def weak_secrets() -> list[str]:
+    """Configured secrets that are too short and therefore ignored (names only, never values)."""
+    return [f"{name} is shorter than {minimum} characters and is ignored"
+            for name, minimum in _SECRETS if os.environ.get(name) and len(os.environ[name]) < minimum]
 
 
 def configured() -> bool:
     return bool(operator_token() or judge_passcode())
+
+
+def not_configured_message() -> str:
+    weak = weak_secrets()
+    return NOT_CONFIGURED + (" " + "; ".join(weak) + "." if weak else "")
 
 
 def session_seconds() -> int:
@@ -144,9 +172,7 @@ def cookie_kwargs(max_age: int) -> dict:
 # ---------------------------------------------------------------------------- passcode attempts
 class AttemptLimiter:
     """Failed sign-in attempts: at most `per_client` per client and `overall` in total within
-    `window` seconds. Behind the Next.js /api proxy every request comes from 127.0.0.1, so the
-    client is the first X-Forwarded-For address when the peer is loopback; the overall limit
-    still holds if that header is forged."""
+    `window` seconds (see sign_in for what happens past them)."""
 
     def __init__(self, per_client: int = 5, overall: int = 30, window: float = 60.0):
         self.per_client, self.overall, self.window = per_client, overall, window
@@ -158,8 +184,9 @@ class AttemptLimiter:
         while q and q[0] <= t - self.window:
             q.popleft()
 
-    def retry_after(self, client: str) -> int:
-        """Seconds until this client may try again (0 = allowed now)."""
+    def retry_after(self, client: str, overall: bool = True) -> int:
+        """Seconds until this client may try again (0 = allowed now); `overall=False` asks
+        about the client's own bucket only."""
         t = time.monotonic()
         with self._lock:
             q = self._by.get(client, deque())
@@ -168,7 +195,7 @@ class AttemptLimiter:
             waits = []
             if len(q) >= self.per_client:
                 waits.append(q[0] + self.window - t)
-            if len(self._all) >= self.overall:
+            if overall and len(self._all) >= self.overall:
                 waits.append(self._all[0] + self.window - t)
             return int(max(waits) + 1) if waits else 0
 
@@ -189,20 +216,59 @@ class AttemptLimiter:
 LIMITER = AttemptLimiter()
 
 
-def client_key(peer: str | None, forwarded_for: str | None) -> str:
+LOOPBACK = ("127.0.0.1", "::1", "localhost", "testclient")
+
+
+def trusted_proxy() -> bool:
+    """COUNTERPROOF_TRUSTED_PROXY=1: a reverse proxy in front of the API appends the real
+    client address to X-Forwarded-For. The Next.js /api rewrite does NOT (it sets only
+    X-Forwarded-Host), so leave this off behind it."""
+    return os.environ.get("COUNTERPROOF_TRUSTED_PROXY") == "1"
+
+
+@dataclass(frozen=True)
+class Client:
+    key: str        # the bucket failed sign-ins are counted in
+    distinct: bool  # True when the key tells one client from another
+
+
+def client_of(peer: str | None, forwarded_for: str | None) -> Client:
+    """Who is signing in. The TCP peer, except behind a trusted proxy (COUNTERPROOF_TRUSTED_PROXY=1,
+    loopback peer), where it is the rightmost X-Forwarded-For entry: the one that proxy added
+    (anything to its left came from the client and is forgeable). Without a trusted proxy a
+    loopback peer is shared by every browser behind the local Next.js server, and any
+    X-Forwarded-For is the client's own invention, so it is ignored."""
     peer = peer or "unknown"
-    if peer in ("127.0.0.1", "::1", "localhost", "testclient") and forwarded_for:
-        return forwarded_for.split(",")[0].strip()[:64] or peer
-    return peer
+    if peer in LOOPBACK:
+        if trusted_proxy() and forwarded_for:
+            hop = forwarded_for.split(",")[-1].strip()[:64]
+            if hop:
+                return Client(hop, True)
+        return Client(peer, False)
+    return Client(peer, True)
 
 
-def sign_in(conn: sqlite3.Connection, passcode: str, client: str) -> tuple[str, dict]:
-    """Check a passcode (judge passcode, or the operator token) and open a session."""
+def client_key(peer: str | None, forwarded_for: str | None) -> str:
+    return client_of(peer, forwarded_for).key
+
+
+def sign_in(conn: sqlite3.Connection, passcode: str, client: Client | str) -> tuple[str, dict]:
+    """Check a passcode (judge passcode, or the operator token) and open a session.
+
+    Failed attempts are counted per client and overall; past either limit a wrong passcode is
+    answered 429 instead of 401. A client that can be told apart (behind a trusted proxy) is
+    refused for its window before its passcode is even compared. A shared client (every browser
+    behind the Next.js proxy) is not: the correct passcode is always accepted, so nobody can
+    hold sign-in closed for everyone by failing on purpose. The overall limit never refuses the
+    correct passcode either. What stops guessing is the passcode's length (MIN_PASSCODE_CHARS)."""
+    if isinstance(client, str):
+        client = Client(client, client not in LOOPBACK)
     if not configured():
-        raise AuthError(NOT_CONFIGURED, 401)
-    wait = LIMITER.retry_after(client)
-    if wait:
-        raise AuthError(f"too many failed sign-in attempts; try again in {wait} s", 429, {"Retry-After": str(wait)})
+        raise AuthError(not_configured_message(), 401)
+    if client.distinct:
+        wait = LIMITER.retry_after(client.key, overall=False)
+        if wait:
+            raise AuthError(f"too many failed sign-in attempts; try again in {wait} s", 429, {"Retry-After": str(wait)})
     passcode = passcode or ""
     role = None
     judge, op = judge_passcode(), operator_token()
@@ -213,10 +279,14 @@ def sign_in(conn: sqlite3.Connection, passcode: str, client: str) -> tuple[str, 
         role = "judge"
     if op_ok:
         role = "operator"
-    if role is None:
-        LIMITER.failed(client)
-        raise AuthError("wrong passcode", 401)
-    return create_session(conn, role)
+    if role is not None:
+        return create_session(conn, role)
+    wait = LIMITER.retry_after(client.key)
+    LIMITER.failed(client.key)
+    if wait:
+        raise AuthError(f"too many failed sign-in attempts; try again in {wait} s", 429, {"Retry-After": str(wait)})
+    weak = [w for w in weak_secrets() if "PASSCODE" in w]
+    raise AuthError("wrong passcode" + (f" (judge sign-in is disabled: {weak[0]})" if weak else ""), 401)
 
 
 # ---------------------------------------------------------------------------- request checks
@@ -235,14 +305,15 @@ def origin_of(headers) -> str | None:
 def authenticate(conn: sqlite3.Connection, headers, cookies) -> Actor:
     """The actor behind a mutating request, or AuthError (401 / 403)."""
     if not configured():
-        raise AuthError(NOT_CONFIGURED, 401)
+        raise AuthError(not_configured_message(), 401)
     auth = headers.get("authorization")
     if auth:
         scheme, _, value = auth.partition(" ")
         op = operator_token()
         if scheme.lower() == "bearer" and op and value and _eq(value.strip(), op):
             return Actor(role="operator", owner="operator", via="bearer")
-        raise AuthError("invalid operator token", 401)
+        weak = [w for w in weak_secrets() if "OPERATOR" in w]
+        raise AuthError("invalid operator token" + (f" ({weak[0]})" if weak else ""), 401)
     rec = lookup_session(conn, cookies.get(COOKIE))
     if rec is None:
         raise AuthError(SIGN_IN if not cookies.get(COOKIE) else "your session has expired or was signed out; sign in again", 401)

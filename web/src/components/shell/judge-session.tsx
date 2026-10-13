@@ -21,7 +21,15 @@ export function judgeLimitsText(session: SessionInfo | null | undefined): string
     `up to ${formatNumber(l.max_sequences)} sequences and ${formatNumber(l.max_wall_seconds)} s per run`,
     l.max_active_jobs ? `${l.max_active_jobs} active jobs at a time` : null,
     l.daily_tokens ? `${formatNumber(l.daily_tokens)} model tokens a day` : null,
-    l.model ? `live-model work on ${l.model} at temperature 0` : null,
+    l.all_sessions_active_jobs || l.all_sessions_daily_tokens
+      ? `all judge sessions together ${[
+          l.all_sessions_active_jobs ? `${l.all_sessions_active_jobs} active jobs` : null,
+          l.all_sessions_daily_tokens ? `${formatNumber(l.all_sessions_daily_tokens)} tokens a day` : null,
+        ]
+          .filter(Boolean)
+          .join(" and ")}`
+      : null,
+    l.model ? `live-model work only on ${l.model}` : null,
   ].filter(Boolean);
   return parts.join(", ");
 }
@@ -138,6 +146,14 @@ export function JudgeSession({ className }: { className?: string }) {
                   {formatNumber(s.usage.tokens_today)}
                   {s.usage.daily_tokens ? ` of ${formatNumber(s.usage.daily_tokens)}` : ""}
                 </dd>
+                {s.usage.all_sessions_daily_tokens ? (
+                  <>
+                    <dt>All judge sessions</dt>
+                    <dd className="tabular text-fg">
+                      {formatNumber(s.usage.all_sessions_tokens_today ?? 0)} of {formatNumber(s.usage.all_sessions_daily_tokens)} tokens
+                    </dd>
+                  </>
+                ) : null}
                 <dt>Evaluator, all sessions</dt>
                 <dd className="tabular text-fg">
                   {formatNumber(s.usage.global_tokens_today)} of {formatNumber(s.usage.global_daily_ceiling)} tokens

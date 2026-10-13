@@ -155,7 +155,7 @@ describe("session helpers", () => {
     const { sessionLimits } = await import("@/lib/api");
     type S = Parameters<typeof sessionLimits>[0];
     expect(judgeLimitsText(SESSION as unknown as S)).toBe(
-      "up to 50 sequences and 300 s per run, 2 active jobs at a time, 200,000 model tokens a day, live-model work on groq/openai/gpt-oss-120b at temperature 0",
+      "up to 50 sequences and 300 s per run, 2 active jobs at a time, 200,000 model tokens a day, live-model work only on groq/openai/gpt-oss-120b",
     );
     expect(sessionSummary(SESSION as unknown as S)).toMatch(/^Judge until .+ - 198,800 model tokens left today$/);
     const anon = { authenticated: false, role: null, auth_configured: true, operator_stop: null, limits: { judge: SESSION.limits } };

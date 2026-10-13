@@ -3,13 +3,20 @@
 * Role caps (judge / operator) on run budgets and parameters. Caller values are clamped to the
   cap; an absent or 0 model budget never means "unlimited" (the harness treats 0 as
   unlimited, so 0 is replaced before a Budget is built).
-* Queue capacity: a per-session limit on active jobs and a global limit on queued + running
-  jobs (429), and the operator stop (503).
-* A model-token ledger (one row per successful model call) with a per-session daily budget and a
-  global daily ceiling, checked by every model client before each call. A refusal is raised as
-  ProviderError(kind="unavailable") by the caller - a provider-side failure, so the runner
-  records runner_failure (retryable, never a verdict). It must never be kind "budget": the
-  runner maps that to target_crash, which would blame the target.
+* Queue capacity: a per-session limit on active jobs, a limit on the active jobs of all judge
+  sessions together, and a global limit on queued + running jobs (429), and the operator stop
+  (503).
+* A model-token ledger (one row per successful model call) with a per-session daily budget, a
+  daily budget for all judge sessions together and a global daily ceiling, checked by every
+  model client before each call - the worker's and the signer's (owner "signer"). A refusal is
+  raised as ProviderError(kind="unavailable") by the caller - a provider-side failure, so the
+  runner records runner_failure (retryable, never a verdict; the signer answers "failed,
+  retryable", never a refusal). It must never be kind "budget": the runner maps that to
+  target_crash, which would blame the target.
+
+Per-session limits are not per person: whoever holds the passcode can sign in again for a new
+session. The judge-wide limits are what bound all judges together, and they sit below the
+global queue limit and token ceiling so the operator's own work always keeps headroom.
 
 Every number comes from the environment with a safe default; see .env.example.
 """
@@ -31,8 +38,10 @@ FORWARDED_SETTINGS = tuple(
     [f"COUNTERPROOF_{r}_{f}" for r in ("JUDGE", "OPERATOR")
      for f in ("MAX_SEQUENCES", "MAX_WALL_SECONDS", "MAX_MODEL_CALLS", "MAX_MODEL_TOKENS", "MAX_ACTIONS",
                "MAX_ACTIVE_JOBS", "DAILY_TOKENS")]
-    + ["COUNTERPROOF_MAX_QUEUED_JOBS", "COUNTERPROOF_DAILY_TOKEN_CEILING", "COUNTERPROOF_ALLOWED_ORIGINS",
-       "COUNTERPROOF_ALLOWED_HOSTS", "COUNTERPROOF_COOKIE_SECURE", "COUNTERPROOF_SESSION_HOURS"])
+    + ["COUNTERPROOF_JUDGE_TOTAL_ACTIVE_JOBS", "COUNTERPROOF_JUDGE_TOTAL_DAILY_TOKENS",
+       "COUNTERPROOF_MAX_QUEUED_JOBS", "COUNTERPROOF_DAILY_TOKEN_CEILING", "COUNTERPROOF_ALLOWED_ORIGINS",
+       "COUNTERPROOF_ALLOWED_HOSTS", "COUNTERPROOF_COOKIE_SECURE", "COUNTERPROOF_SESSION_HOURS",
+       "COUNTERPROOF_TRUSTED_PROXY"])
 
 
 # ---------------------------------------------------------------------------- configuration
@@ -56,6 +65,10 @@ class RoleCaps:
     max_sequences_per_call: int   # model-assisted generator
     max_active_jobs: int          # queued + running jobs per session; 0 = no per-session limit
     daily_tokens: int             # model tokens per session per UTC day; 0 = no per-session limit
+    # Every session of this role together (signing in again opens a new session with fresh
+    # per-session quotas, so these are what bound the role); 0 = no role-wide limit.
+    all_sessions_active_jobs: int = 0
+    all_sessions_daily_tokens: int = 0
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -84,6 +97,10 @@ def caps(role: str) -> RoleCaps:
         max_sequences_per_call=5,
         max_active_jobs=_env_int(p + "MAX_ACTIVE_JOBS", 2),
         daily_tokens=_env_int(p + "DAILY_TOKENS", 200_000),
+        # Below the global queue limit (20) and token ceiling (1,000,000): judges together can
+        # never fill the queue or spend the day's ceiling, so the operator keeps headroom.
+        all_sessions_active_jobs=_env_int(p + "TOTAL_ACTIVE_JOBS", 8),
+        all_sessions_daily_tokens=_env_int(p + "TOTAL_DAILY_TOKENS", 500_000),
     )
 
 
@@ -97,13 +114,21 @@ def daily_token_ceiling() -> int:
     return _env_int("COUNTERPROOF_DAILY_TOKEN_CEILING", 1_000_000)
 
 
+SYSTEM_OWNERS = ("operator", "signer")  # the signer's own replays are attributed to "signer"
+
+
 def role_of(owner: str | None) -> str:
-    """Owner strings are "operator" or "<role>:<handle>". Rows from before authentication
-    (owner NULL) were queued by trusted scripts and get the operator caps (still finite)."""
-    if not owner or owner == "operator":
+    """Owner strings are "operator", "signer" or "<role>:<handle>". Rows from before
+    authentication (owner NULL) were queued by trusted scripts and get the operator caps (still
+    finite). Anything unrecognised gets the judge caps (the tighter ones)."""
+    if not owner or owner in SYSTEM_OWNERS:
         return "operator"
     role = owner.split(":", 1)[0]
     return role if role in ROLES else "judge"
+
+
+def _role_like(role: str) -> str:
+    return f"{role}:%"
 
 
 class LimitError(Exception):
@@ -120,13 +145,19 @@ MODEL_RUN_DEFAULTS = {"max_sequences": 12, "max_wall_seconds": 900, "max_model_c
 _BUDGET_INTS = ("max_sequences", "max_wall_seconds", "max_model_calls", "max_model_tokens")
 
 
-def _as_int(field: str, v) -> int:
+def as_int(v, what: str) -> int:
+    """An integer from a JSON value, or LimitError 400. Booleans, NaN and +/-Infinity are
+    refused (int(inf) raises OverflowError, which would otherwise surface as a 500)."""
     if isinstance(v, bool):
-        raise LimitError(f"budget.{field} must be an integer", 400)
+        raise LimitError(f"{what} must be an integer", 400)
     try:
         return int(v)
-    except (TypeError, ValueError):
-        raise LimitError(f"budget.{field} must be an integer", 400) from None
+    except (TypeError, ValueError, OverflowError):
+        raise LimitError(f"{what} must be an integer", 400) from None
+
+
+def _as_int(field: str, v) -> int:
+    return as_int(v, f"budget.{field}")
 
 
 def clamp_budget(requested: dict | None, role: str, model_involved: bool) -> tuple[dict, dict]:
@@ -173,12 +204,7 @@ def clamp_params(params: dict, role: str, scope_max_actions: int) -> dict:
 
 
 def _as_param_int(field: str, v) -> int:
-    if isinstance(v, bool):
-        raise LimitError(f"params.{field} must be an integer", 400)
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        raise LimitError(f"params.{field} must be an integer", 400) from None
+    return as_int(v, f"params.{field}")
 
 
 def configured_model() -> tuple[str, str]:
@@ -212,9 +238,9 @@ def judge_target_config(given: dict | None, requires_model: bool) -> dict:
                          f"{given.get('provider', provider)}/{given.get('model', model)} needs the operator", 403)
     try:
         temperature = float(given.get("temperature", 0))
-        steps = int(given.get("max_steps", JUDGE_MAX_STEPS))
     except (TypeError, ValueError):
-        raise LimitError("target_config temperature and max_steps must be numbers", 400) from None
+        raise LimitError("target_config temperature must be a number", 400) from None
+    steps = as_int(given.get("max_steps", JUDGE_MAX_STEPS), "target_config.max_steps")
     if temperature != 0:
         raise LimitError("judge sessions run the model at temperature 0", 403)
     if steps < 1 or steps > JUDGE_MAX_STEPS:
@@ -230,6 +256,30 @@ def judge_run_model(params: dict) -> dict:
         raise LimitError(f"judge sessions use the configured model {provider}/{model} for model-assisted runs", 403)
     p["provider"], p["model"] = provider, model
     return p
+
+
+def spec_model(spec: dict) -> tuple[str, str] | None:
+    """The provider/model a spec's target runs on (as providers.broker_for_spec picks it), or
+    None for a target that needs no model."""
+    cfg = spec["target"].get("config") or {}
+    if spec["target"]["determinism"] != "stochastic" or not cfg.get("provider"):
+        return None
+    from .providers import PROVIDERS
+
+    return cfg["provider"], cfg.get("model") or PROVIDERS.get(cfg["provider"], {}).get("default_model", "")
+
+
+def judge_spec_check(spec: dict) -> None:
+    """A judge may queue live-model work (runs, submissions, retries, regressions) only on a
+    target that runs on the configured provider/model. An operator-published challenge may
+    name another model; work on it is the operator's to start (403)."""
+    m = spec_model(spec)
+    if m is None:
+        return
+    provider, model = configured_model()
+    if m != (provider, model):
+        raise LimitError(f"this challenge's target runs on {m[0]}/{m[1]}; judge sessions can queue live-model work only "
+                         f"on the configured model {provider}/{model}. Ask the operator to run it.", 403)
 
 
 # ---------------------------------------------------------------------------- shared state (main DB)
@@ -259,16 +309,31 @@ def today() -> str:
     return time.strftime("%Y-%m-%d", time.gmtime())
 
 
-def tokens_today(conn: sqlite3.Connection, owner: str | None = None) -> int:
-    """Model tokens used today (UTC): by one owner, or by everyone when owner is None."""
+def tokens_today(conn: sqlite3.Connection, owner: str | None = None, role: str | None = None) -> int:
+    """Model tokens used today (UTC): by one owner, by every session of a role, or by everyone."""
     ensure_tables(conn)
-    if owner is None:
-        r = conn.execute("SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) FROM model_usage WHERE day=?",
-                         (today(),)).fetchone()
-    else:
-        r = conn.execute("SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) FROM model_usage WHERE day=? AND owner=?",
-                         (today(), owner)).fetchone()
-    return int(r[0])
+    sql = "SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) FROM model_usage WHERE day=?"
+    args: tuple = (today(),)
+    if owner is not None:
+        sql, args = sql + " AND owner=?", args + (owner,)
+    elif role is not None:
+        sql, args = sql + " AND owner LIKE ?", args + (_role_like(role),)
+    return int(conn.execute(sql, args).fetchone()[0])
+
+
+# A job that was asked to cancel while running ("cancelling") still holds a worker until it
+# reaches its next cancellation point, so it counts as active.
+ACTIVE_SQL = "status IN ('queued','running','cancelling')"
+
+
+def active_jobs(conn: sqlite3.Connection, owner: str | None = None, role: str | None = None) -> int:
+    """Queued or running jobs: one owner's, every session of a role's, or all of them."""
+    sql, args = f"SELECT COUNT(*) FROM jobs WHERE {ACTIVE_SQL}", ()
+    if owner is not None:
+        sql, args = sql + " AND owner=?", (owner,)
+    elif role is not None:
+        sql, args = sql + " AND owner LIKE ?", (_role_like(role),)
+    return int(conn.execute(sql, args).fetchone()[0])
 
 
 def stop_state(conn: sqlite3.Connection) -> dict | None:
@@ -297,7 +362,8 @@ STOP_MESSAGE = "operator stop in effect: no new jobs or model calls until the op
 
 
 def ceiling_refusal(conn: sqlite3.Connection, owner: str | None) -> str | None:
-    """Why a model call or a model-using job is refused now (stop, global or session budget), or None."""
+    """Why a model call or a model-using job is refused now (stop, global, role-wide or session
+    budget), or None."""
     if stop_state(conn):
         return STOP_MESSAGE
     used = tokens_today(conn)
@@ -305,11 +371,17 @@ def ceiling_refusal(conn: sqlite3.Connection, owner: str | None) -> str | None:
     if used >= ceiling:
         return f"cost ceiling reached: {used} of {ceiling} model tokens used today (UTC); resets at 00:00 UTC"
     if owner:
-        per = caps(role_of(owner)).daily_tokens
-        if per:
+        role = role_of(owner)
+        c = caps(role)
+        if c.daily_tokens:
             mine = tokens_today(conn, owner)
-            if mine >= per:
-                return f"cost ceiling reached for this session: {mine} of {per} model tokens used today (UTC)"
+            if mine >= c.daily_tokens:
+                return f"cost ceiling reached for this session: {mine} of {c.daily_tokens} model tokens used today (UTC)"
+        if c.all_sessions_daily_tokens and owner not in SYSTEM_OWNERS:
+            ours = tokens_today(conn, role=role)
+            if ours >= c.all_sessions_daily_tokens:
+                return (f"cost ceiling reached for {role} sessions: {ours} of {c.all_sessions_daily_tokens} model tokens "
+                        f"used today (UTC) by all {role} sessions together; resets at 00:00 UTC")
     return None
 
 
@@ -334,26 +406,30 @@ def record_usage(owner: str | None, job_id: str | None, provider: str, model: st
 
 
 # ---------------------------------------------------------------------------- queue capacity
-ACTIVE = ("queued", "running")
-
-
 def check_capacity(conn: sqlite3.Connection, owner: str, model_involved: bool = False) -> None:
     """Refuse a new job (raise LimitError) when the operator stop is in effect (503), the
-    queue is full (429), this session already has its active jobs (429), or a model-using job
-    would start past a token ceiling (429). Call inside the transaction that enqueues."""
+    queue is full (429), this session or all sessions of its role together already have their
+    active jobs (429), or a model-using job would start past a token ceiling (429). Call inside
+    the transaction that enqueues."""
     if stop_state(conn):
         raise LimitError(STOP_MESSAGE, 503)
-    total = conn.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]
+    total = active_jobs(conn)
     if total >= max_queued_jobs():
         raise LimitError(f"the evaluator queue is full ({total} jobs queued or running, limit {max_queued_jobs()}); "
                          "try again when some finish", 429)
-    per = caps(role_of(owner)).max_active_jobs
-    if per and owner != "operator":
-        mine = conn.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND status IN ('queued','running')",
-                            (owner,)).fetchone()[0]
-        if mine >= per:
-            raise LimitError(f"this session already has {mine} active jobs (limit {per}); wait for one to finish "
-                             "or cancel it", 429)
+    role = role_of(owner)
+    c = caps(role)
+    if owner not in SYSTEM_OWNERS:
+        if c.max_active_jobs:
+            mine = active_jobs(conn, owner=owner)
+            if mine >= c.max_active_jobs:
+                raise LimitError(f"this session already has {mine} active jobs (limit {c.max_active_jobs}); wait for one "
+                                 "to finish or cancel it", 429)
+        if c.all_sessions_active_jobs:
+            ours = active_jobs(conn, role=role)
+            if ours >= c.all_sessions_active_jobs:
+                raise LimitError(f"{role} sessions together already have {ours} active jobs (limit "
+                                 f"{c.all_sessions_active_jobs}); try again when some finish", 429)
     if model_involved:
         why = ceiling_refusal(conn, owner)
         if why:
@@ -361,13 +437,23 @@ def check_capacity(conn: sqlite3.Connection, owner: str, model_involved: bool = 
 
 
 def usage_view(conn: sqlite3.Connection, owner: str | None, role: str) -> dict:
+    """Today's usage for a session. tokens_remaining is what this session can still use: the
+    lower of its own budget and what is left of the budget all its role's sessions share."""
     c = caps(role)
     mine = tokens_today(conn, owner) if owner else 0
-    active = conn.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND status IN ('queued','running')",
-                          (owner,)).fetchone()[0] if owner else 0
+    active = active_jobs(conn, owner=owner) if owner else 0
     used = tokens_today(conn)
-    return {"active_jobs": active, "max_active_jobs": c.max_active_jobs or None,
-            "tokens_today": mine, "daily_tokens": c.daily_tokens or None,
-            "tokens_remaining": max(0, c.daily_tokens - mine) if c.daily_tokens else None,
-            "global_tokens_today": used, "global_daily_ceiling": daily_token_ceiling(),
-            "day": today()}
+    out = {"active_jobs": active, "max_active_jobs": c.max_active_jobs or None,
+           "tokens_today": mine, "daily_tokens": c.daily_tokens or None,
+           "tokens_remaining": max(0, c.daily_tokens - mine) if c.daily_tokens else None,
+           "global_tokens_today": used, "global_daily_ceiling": daily_token_ceiling(),
+           "day": today()}
+    if c.all_sessions_daily_tokens or c.all_sessions_active_jobs:
+        ours = tokens_today(conn, role=role)
+        out |= {"all_sessions_tokens_today": ours, "all_sessions_daily_tokens": c.all_sessions_daily_tokens or None,
+                "all_sessions_active_jobs": active_jobs(conn, role=role),
+                "all_sessions_max_active_jobs": c.all_sessions_active_jobs or None}
+        if c.all_sessions_daily_tokens:
+            left = max(0, c.all_sessions_daily_tokens - ours)
+            out["tokens_remaining"] = left if out["tokens_remaining"] is None else min(out["tokens_remaining"], left)
+    return out
