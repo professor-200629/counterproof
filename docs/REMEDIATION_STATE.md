@@ -17,12 +17,12 @@ Continue from this file and the actual code. Update after every milestone.
 | # | Task | State |
 |---|---|---|
 | 1 | Establish state, baseline checks | done (see log) |
-| 2 | Live-model attestation trust gap (signer independent k-of-n verification) | todo |
-| 3 | Expired attestation renewal | todo |
-| 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | todo |
-| 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | todo |
-| 6 | External open-source agent + reproduction kit | todo |
-| 7 | Judge experience (first screen, comparisons, metrics) | todo |
+| 2 | Live-model attestation trust gap (signer independent k-of-n verification) | unit A implemented + reviewed; fix pass running (resumed after session restart) |
+| 3 | Expired attestation renewal | in unit A |
+| 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | unit C running (worktree) |
+| 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | code merged (unit B); live replay running |
+| 6 | External open-source agent + reproduction kit | blocked (no container engine); plan in docs/EXTERNAL_AGENT_PLAN.md; kit todo |
+| 7 | Judge experience (first screen, comparisons, metrics) | merged (unit D); browser check todo |
 | 8 | Docs, demo, pitch, submission | todo |
 | 9 | Verification, REMEDIATION_REPORT.md | todo |
 
@@ -62,16 +62,19 @@ Continue from this file and the actual code. Update after every milestone.
   under the container isolation the project requires for non-first-party code. Integration is
   blocked; candidates + kit being prepared.
 
-## Work in flight (2026-10-12 ~22:30 UTC)
+## Work in flight (2026-10-13 ~04:10 UTC)
 
-- Workflow stage 1 (worktrees): unit A signer verification + renewal; unit B repaired adapter
-  0.2.0 + recording broker + live-model regression export. Each: implement -> 2 adversarial
-  reviews -> fix.
-- Workflow unit D (worktree): judge-facing web changes.
-- Scout workflow: external open-source purchasing agents (pinned commit + license).
-- Next: merge A, B, D into `remediation/judge-review`; then unit C (authenticated judge session,
-  server budgets, operator stop, verify_tx log-origin fix); then live runs (repaired replay with
-  Groq; local anvil live-model e2e with the signer's own verification); docs; report.
+- Session restarted at ~03:50 UTC; stage-1 workflow resumed from its journal (run `wf_566fef0c-474`).
+- Merged into `remediation/judge-review`: unit D (judge UI, 142 web tests pass after merge) and unit B
+  (repaired adapter 0.2.0 etc.; backend 114 passed / 4 skipped after merge). Compare-view conflicts
+  resolved by keeping both units' wording.
+- Running: unit A fix pass (worktree `.claude/worktrees/wf_566fef0c-474-1`); unit C (workflow
+  `wf_7a974716-6bc`); `scripts/live_repair_replay.py` (real Groq replays of the challenge #3 attack
+  against 0.2.0 + an ordinary purchase; works on a copy of the testnet data dir).
+- Then: merge A and C (expected conflicts in api.py attest route, chain.py, worker.py, dev.py,
+  e2e Stack, web api.ts), re-run all suites, local anvil live-model e2e with the signer's own
+  verification, re-export snapshot, docs (REPRODUCE.md, README, STATUS, THREAT_MODEL, ARCHITECTURE,
+  SUBMISSION, DEMO_SCRIPT, PITCH), REMEDIATION_REPORT.md, browser checks.
 
 ## Blockers / owner actions
 
@@ -79,4 +82,4 @@ Continue from this file and the actual code. Update after every milestone.
 
 ## Next concrete task
 
-Run baseline checks; read signer.py / evaluator.py / api.py / web proxy.
+Wait for unit A fix + unit C + live replay; merge; run suites.
