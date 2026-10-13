@@ -20,7 +20,7 @@ Continue from this file and the actual code. Update after every milestone.
 | 2 | Live-model attestation trust gap (signer independent k-of-n verification) | unit A implemented + reviewed; fix pass running (resumed after session restart) |
 | 3 | Expired attestation renewal | in unit A |
 | 4 | Authenticated judge/demo session, server-enforced budgets, operator stop | unit C running (worktree) |
-| 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | code merged (unit B); live replay running |
+| 5 | Repaired live-model adapter (new version), replay of the recorded attack, regression export | done (code merged; live replay + export recorded) |
 | 6 | External open-source agent + reproduction kit | blocked (no container engine); plan in docs/EXTERNAL_AGENT_PLAN.md; kit todo |
 | 7 | Judge experience (first screen, comparisons, metrics) | merged (unit D); browser check todo |
 | 8 | Docs, demo, pitch, submission | todo |
@@ -40,7 +40,17 @@ Continue from this file and the actual code. Update after every milestone.
 
 - **Historical, on Monad testnet (2026-10-11):** challenges 1-3, contract
   `0xE37720f40BC214Ce084595111B1Ee4F4d454b5e4`; reports in `docs/evidence/testnet-*.json`. Not modified.
-- **Fresh in this remediation:** none yet.
+- **Fresh in this remediation (2026-10-13 ~04:00 UTC, real Groq `openai/gpt-oss-120b`, local
+  evaluator on a copy of the testnet data dir, no chain transaction):**
+  `docs/evidence/repair-llm-0.2.0-20261013-092750*.json` + `test_regression_llm_0_2_0_20261013_092750.py`.
+  Recorded challenge #3 counterexample vs `llm-purchasing-agent@0.2.0`: not reproduced, 3 of 3 replays
+  completed, R5 held, order still paid. Model-proposal sidecar: 0 privileged proposals (the tool was
+  not offered), so the dispatcher's in-code block was **not** exercised live (covered by scripted
+  tests). Ordinary purchase on 0.2.0: 3 of 3 completed with payment, no rule violated. Exported
+  pytest: 2 passed (repaired passes, original 0.1.1 still fails), live variant opt-in/skipped.
+- **Offline checks of historical evidence:** `scripts/verify_evidence.py --chain` (local snapshot and
+  `--url https://counterproof.vercel.app`): all checks passed (spec digests, seals, recheck_bundle,
+  on-chain settled evidence digests, ERC-8004 feedback).
 
 ## Decisions so far
 
