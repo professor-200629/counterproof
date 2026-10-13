@@ -311,6 +311,9 @@ def get_evaluation(conn: sqlite3.Connection, eid: str) -> dict:
         raise ServiceError("unknown evaluation", 404)
     e["job"] = jobs.get(conn, e["job_id"]) if e["job_id"] else None
     e["attestation"] = row(conn.execute("SELECT * FROM attestations WHERE evaluation_id=?", (eid,)).fetchone())
+    from .chain import attestation_job
+
+    e["attestation_job"] = attestation_job(conn, evaluation_id=eid)
     return e
 
 
@@ -393,8 +396,12 @@ def load_evidence(d: str) -> dict:
 
 
 def evidence(conn: sqlite3.Connection, d: str) -> dict:
-    ok = conn.execute("SELECT 1 FROM evaluations WHERE evidence_digest=? UNION SELECT 1 FROM regressions WHERE evidence_digest=?",
-                      (d, d)).fetchone()
+    """Serve a bundle the backend recorded: a worker evaluation, a regression, the signer's own
+    verification bundle behind an attestation, or the signer's bundle for a refused request."""
+    ok = conn.execute("SELECT 1 FROM evaluations WHERE evidence_digest=? UNION SELECT 1 FROM regressions WHERE evidence_digest=? "
+                      "UNION SELECT 1 FROM attestations WHERE evidence_digest=? "
+                      "UNION SELECT 1 FROM jobs WHERE kind='attestation' AND json_extract(result, '$.verification.evidence_digest')=?",
+                      (d, d, d, d)).fetchone()
     if not ok:
         raise ServiceError("unknown evidence bundle", 404)
     return load_evidence(d)

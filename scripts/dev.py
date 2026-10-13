@@ -132,6 +132,9 @@ def main() -> int:
     common |= {"COUNTERPROOF_SIGNER_TOKEN": token, "COUNTERPROOF_SIGNER_URL": "http://127.0.0.1:8011"}
     roles["worker"] |= providers
     roles["api"] |= providers
+    # The signer replays every submission itself before it signs, live-model ones included,
+    # so its model broker needs the provider key (target children never receive it).
+    roles["signer"] |= providers
     workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 2
     services = [("signer", "counterproof.signer"), ("api", "counterproof.api")] + [("worker", "counterproof.worker")] * workers
     for name, module in services:

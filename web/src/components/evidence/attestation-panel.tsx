@@ -1,24 +1,34 @@
 "use client";
 
-import { FileSignature, Scale } from "lucide-react";
+import { Scale } from "lucide-react";
 import type { ReactNode } from "react";
 import { TrustStatement } from "@/components/truth";
 import { Address } from "@/components/ui/address";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/ui/card";
 import { Digest } from "@/components/ui/digest";
 import { JsonView } from "@/components/ui/json-view";
 import { KeyValueList } from "@/components/ui/stat";
-import { ErrorState } from "@/components/ui/states";
-import { Countdown, DateTime } from "@/components/ui/time";
-import type { AttestationTypedData, ChallengeView, Evaluation, EvidenceBundle, Hex } from "@/lib/api";
+import { textLinkClasses } from "@/components/ui/text-link";
+import { Countdown, DateTime, useNow } from "@/components/ui/time";
+import {
+  evidenceDownloadUrl,
+  evidenceFilename,
+  type AttestationTypedData,
+  type ChallengeView,
+  type Evaluation,
+  type EvidenceBundle,
+  type Hex,
+  type SignerVerification,
+} from "@/lib/api";
 import { digestMatchesBytes32, txNetworkPhrase } from "@/lib/chain";
-import { useAttest } from "@/lib/queries";
+import { useRefreshWhenAttestationJobEnds } from "@/lib/queries";
 import { MatchMark } from "@/components/ui/match-mark";
 import { sameHex } from "@/lib/format";
 import type { SignatureBinding } from "@/components/settlement/use-recovered-signer";
+import { AttestationRequestButton, SignerJobStatus, signerReplayNote } from "@/components/settlement/attestation-request";
+import { attestedEvidence, canRenewAttestation, verificationSummary } from "@/components/settlement/derive";
 import { BindingMark } from "./who-checked";
-import { ReadOnlyNote } from "@/components/snapshot";
 import { SNAPSHOT_MODE } from "@/lib/snapshot";
 
 /** The parts of an attestation this panel shows (AttestationRow and SettlementAttestation both fit). */
@@ -27,7 +37,10 @@ export interface AttestationLike {
   signature: Hex;
   signer: string;
   expiry: number;
-  created_at?: number;
+  created_at?: number | null;
+  /** The signer's own verification bundle (absent on attestations signed before the signer replayed itself). */
+  evidence_digest?: string | null;
+  verification?: SignerVerification | null;
 }
 
 export interface AttestationPanelProps {
@@ -46,9 +59,13 @@ export interface AttestationPanelProps {
  * one when the verdict is a reward-eligible verified violation on a funded challenge).
  */
 export function AttestationPanel({ evaluation, bundle, challenge, attestation, binding }: AttestationPanelProps) {
-  const attest = useAttest(evaluation.challenge_id);
   const outcome = bundle.verdict.outcome;
   const settlementHref = `/challenges/${evaluation.challenge_id}/settlement`;
+  const job = evaluation.attestation_job ?? null;
+  const liveModel = bundle.target.determinism === "stochastic";
+  const now = useNow(1000);
+  const nowSec = now === null ? null : Math.floor(now / 1000);
+  useRefreshWhenAttestationJobEnds(evaluation.challenge_id, job);
 
   if (!attestation) {
     let body: ReactNode;
@@ -87,26 +104,22 @@ export function AttestationPanel({ evaluation, bundle, challenge, attestation, b
           <p className="text-sm text-muted">
             No attestation {SNAPSHOT_MODE ? "had been issued when this snapshot was recorded" : "yet"}. Requesting one asks the evaluator&apos;s signing service to sign an EIP-712 attestation of this
             verdict, binding the spec, submission, candidate and evidence digests and the recipient fixed at commit time.
+            {SNAPSHOT_MODE ? null : (
+              <>
+                {" "}
+                The signer does not sign this page&apos;s bundle: it replays the committed candidate itself and signs only its own
+                evidence. {signerReplayNote(liveModel)}
+              </>
+            )}
           </p>
-          {SNAPSHOT_MODE ? (
-            <ReadOnlyNote action="Requesting an attestation" />
-          ) : (
-            <Button
-              variant="primary"
-              icon={<FileSignature />}
-              busy={attest.isPending}
-              busyLabel="Requesting attestation..."
-              onClick={() => attest.mutate(evaluation.id)}
-            >
-              Request attestation
-            </Button>
-          )}
-          {attest.isError ? <ErrorState error={attest.error} title="The attestation was not issued" compact /> : null}
-          {attest.isSuccess ? (
-            <p role="status" className="text-sm text-ok">
-              Attestation issued. Reloading the evaluation.
-            </p>
-          ) : null}
+          <SignerJobStatus job={job} liveModel={liveModel} />
+          <AttestationRequestButton
+            challengeId={evaluation.challenge_id}
+            evaluationId={evaluation.id}
+            job={job}
+            liveModel={liveModel}
+            readOnlyAction="Requesting an attestation"
+          />
         </div>
       );
     }
@@ -123,10 +136,16 @@ export function AttestationPanel({ evaluation, bundle, challenge, attestation, b
 
   const td = attestation.typed_data;
   const m = td.message;
+  // Current attestations bind the signer's OWN verification bundle (its own replays of the
+  // committed candidate); older ones (the recorded testnet run) bound this page's bundle.
+  const evidence = attestedEvidence(attestation, bundle.evidence_digest ?? evaluation.evidence_digest);
+  const verification = attestation.verification ?? null;
+  const replays = verificationSummary(verification);
+  const renewable = !!challenge && canRenewAttestation(challenge, attestation, null, nowSec);
   const checks = {
     spec: digestMatchesBytes32(m.specDigest, bundle.challenge.spec_digest),
     candidate: digestMatchesBytes32(m.candidateDigest, bundle.submission.candidate_digest),
-    evidence: digestMatchesBytes32(m.evidenceDigest, bundle.evidence_digest ?? evaluation.evidence_digest),
+    evidence: digestMatchesBytes32(m.evidenceDigest, evidence.digest),
     recipient: sameHex(m.recipient, evaluation.recipient),
     challenger: sameHex(m.challenger, evaluation.challenger),
   };
@@ -176,8 +195,37 @@ export function AttestationPanel({ evaluation, bundle, challenge, attestation, b
             ...(attestation.created_at
               ? [{ key: "created", label: "Signed", value: <DateTime ts={attestation.created_at} /> }]
               : []),
+            ...(verification
+              ? [
+                  {
+                    key: "own",
+                    label: "Signer's own replay",
+                    value: (
+                      <span className="flex flex-col gap-1">
+                        <span>{replays ? `${replays.charAt(0).toUpperCase()}${replays.slice(1)}.` : verification.reason}</span>
+                        <span className="text-xs text-muted">
+                          Before signing, the signer replayed the committed candidate itself. It signed its own bundle, not the
+                          one on this page, which is the worker&apos;s evaluation and is kept only as a reference.
+                        </span>
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
+
+        {renewable && !SNAPSHOT_MODE ? (
+          <div className="space-y-3 rounded-md border border-line p-3">
+            <p className="text-sm text-muted">
+              This attestation has expired (or is about to), but the challenge is still funded and inside its settlement window. The
+              signer can renew it: it re-reads the chain, re-checks its stored evidence and signs the same message with only a later
+              expiry, never past the settlement deadline.
+            </p>
+            <SignerJobStatus job={job} liveModel={liveModel} />
+            <AttestationRequestButton challengeId={evaluation.challenge_id} evaluationId={evaluation.id} job={job} renew liveModel={liveModel} />
+          </div>
+        ) : null}
 
         <div>
           <h3 className="mb-2 text-sm font-semibold text-fg">Signed message</h3>
@@ -208,12 +256,26 @@ export function AttestationPanel({ evaluation, bundle, challenge, attestation, b
               {
                 key: "evid",
                 label: "evidenceDigest",
-                value: (
-                  <span className="inline-flex flex-wrap items-center gap-2">
-                    <Digest value={m.evidenceDigest} label="signed evidence digest" />
-                    <MatchMark ok={checks.evidence} subject="this evidence bundle" />
-                  </span>
-                ),
+                value:
+                  evidence.source === "signer" && evidence.digest ? (
+                    <span className="flex flex-col gap-1">
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        <Digest value={m.evidenceDigest} label="signed evidence digest" />
+                        <MatchMark ok={checks.evidence} subject="the signer's own verification bundle" />
+                      </span>
+                      <span className="text-xs text-muted">
+                        Differs from this page&apos;s bundle by design.{" "}
+                        <a href={evidenceDownloadUrl(evidence.digest)} download={evidenceFilename(evidence.digest)} className={textLinkClasses}>
+                          Download the signer&apos;s bundle
+                        </a>
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      <Digest value={m.evidenceDigest} label="signed evidence digest" />
+                      <MatchMark ok={checks.evidence} subject="this evidence bundle" />
+                    </span>
+                  ),
               },
               {
                 key: "chal",

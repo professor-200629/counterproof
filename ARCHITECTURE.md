@@ -88,12 +88,24 @@ Validation Registry, which has no official deployment on Monad.
    `verified_violation`, `not_reproduced`, `inconclusive`, `target_crash`, `timeout`,
    `malformed_submission`, `runner_failure`, `cancelled`. Only `verified_violation` of an
    eligible rule is reward-eligible. The evidence bundle is sealed with its own digest.
-7. **Attest.** The worker asks the signer. The signer reloads spec and bundle by digest,
-   re-runs the checks, replays once itself (deterministic targets), reads the challenge and
-   submission from the chain, refuses a second attestation for the challenge, and signs
-   `Attestation(challengeId, specDigest, submissionId, candidateDigest, evidenceDigest,
-   challenger, recipient, verdict, expiry)` under the EIP-712 domain
-   `CounterProof / 1 / chainId / contract`.
+7. **Attest.** The evaluation job queues an `attestation` job, which asks the signer and
+   polls it. The signer trusts nothing the API or worker produced (their evaluation id and
+   evidence digest are recorded as provenance only). It reads the challenge and submission
+   from the chain first, loads the funded spec and the *committed* candidate by their
+   on-chain digests, and runs its own `evaluate()` - the spec's k-of-n policy, fresh
+   isolated children, the deterministic checker, and (for live-model targets) a model broker
+   inside the signer process. It signs only if its own bundle is a reward-eligible
+   verified violation bound to the on-chain submission, and the signed `evidenceDigest` is
+   the digest of that bundle, which it stores for the API to serve. A live-model
+   verification takes minutes, so it runs in the background (`202 verifying`); provider
+   failures are `failed` (retryable, never a verdict). It refuses a second attestation for
+   the challenge, and signs `Attestation(challengeId, specDigest, submissionId,
+   candidateDigest, evidenceDigest, challenger, recipient, verdict, expiry)` under the
+   EIP-712 domain `CounterProof / 1 / chainId / contract`. An attestation lives at most an
+   hour and never past the settlement deadline; while the window is open it can be
+   **renewed**: the signer re-reads the chain, re-checks its stored evidence and signs the
+   same message with only a later expiry (no new replay). Every signature is kept in the
+   signer's audit history.
 8. **Settle.** Anyone relays `settle(attestation, signature)`. The contract checks the
    evaluator signature, the commitment, the spec digest, the deadline and the expiry, then
    credits the *bound* recipient. The recipient withdraws (pull payment). After the

@@ -781,7 +781,11 @@ function rewardAnswer({
   if (challenge.status === "offchain") {
     return { tone: "neutral", text: "No. This is an off-chain challenge: there is no reward, only evidence." };
   }
-  const settle = settleTxForEvidence(challenge.transactions, evidenceDigest);
+  // The settle event carries the attested evidence digest: this bundle's digest for older
+  // attestations, the signer's own verification bundle (for this same submission) for current ones.
+  const settle =
+    settleTxForEvidence(challenge.transactions, evidenceDigest) ??
+    settleTxForEvidence(challenge.transactions, attestation?.evidence_digest ?? null);
   if (settle) {
     const rewardWei = settledRewardWei(settle);
     const amount = rewardWei ? formatWei(rewardWei, challenge.network) : null;

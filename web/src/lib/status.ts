@@ -286,6 +286,11 @@ export function isEvaluationActive(status: string | null | undefined): boolean {
   return !!status && (ACTIVE_EVALUATION_STATUSES as readonly string[]).includes(status);
 }
 
+/** A background job that is still queued or running (e.g. a request to the evaluator's signer). */
+export function isJobActive(job: { status: string } | null | undefined): boolean {
+  return !!job && (job.status === "queued" || job.status === "running");
+}
+
 export function isRegressionActive(status: string | null | undefined): boolean {
   return !!status && ((ACTIVE_REGRESSION_STATUSES as readonly string[]).includes(status) || status === "running");
 }

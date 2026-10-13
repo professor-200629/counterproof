@@ -277,10 +277,16 @@ def settlement(cid: int) -> dict:
     conn = db()
     c = services.get_challenge(conn, cid)
     att = conn.execute("SELECT * FROM attestations WHERE challenge_id=?", (cid,)).fetchone()
-    out = {"challenge": c, "attestation": None, "onchain": None, "explorer_template": settings().explorer_tx_url}
+    out = {"challenge": c, "attestation": None, "onchain": None, "explorer_template": settings().explorer_tx_url,
+           "attestation_job": chain.attestation_job(conn, challenge_id=cid)}
     if att:
-        out["attestation"] = {"typed_data": json.loads(att["typed_data"]), "signature": att["signature"],
-                              "signer": att["signer"], "expiry": att["expiry"], "evaluation_id": att["evaluation_id"]}
+        # evidence_digest: the signer's own verification bundle (the one it signed); NULL for
+        # attestations signed before the signer verified submissions itself.
+        out["attestation"] = {"id": att["id"], "typed_data": json.loads(att["typed_data"]), "signature": att["signature"],
+                              "signer": att["signer"], "expiry": att["expiry"], "evaluation_id": att["evaluation_id"],
+                              "evidence_digest": att["evidence_digest"],
+                              "verification": json.loads(att["verification"]) if att["verification"] else None,
+                              "created_at": att["created_at"], "updated_at": att["updated_at"]}
     if c["onchain_id"]:
         try:
             out["onchain"] = chain.read_challenge(int(c["onchain_id"]))
@@ -362,10 +368,15 @@ def retry_evaluation(eid: str) -> dict:
 
 
 @app.post("/api/evaluations/{eid}/attest")
-def attest(eid: str) -> dict:
+def attest(eid: str) -> JSONResponse:
+    """200 with a usable attestation, or 202 {status: queued|verifying, job_id}: the signer
+    replays the committed candidate itself before it signs (minutes for a live model), so
+    the request is handed to a worker job that polls it. An expired attestation is renewed
+    the same way. The signer's token and key never appear in the response."""
     from . import chain
 
-    return chain.request_attestation(db(), eid)
+    code, body = chain.start_attestation(db(), eid)
+    return JSONResponse(json.loads(json.dumps(body, default=str)), status_code=code)
 
 
 @app.get("/api/evidence/{d}")
