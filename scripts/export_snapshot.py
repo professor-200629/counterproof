@@ -23,7 +23,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 API = sys.argv[sys.argv.index("--api") + 1] if "--api" in sys.argv else "http://127.0.0.1:8010"
 OUT = ROOT / "web" / "public" / "snapshot"
-SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "MNEMONIC")
+SECRET_HINTS = ("KEY", "SECRET", "TOKEN", "PRIVATE", "PASSWORD", "PASSCODE", "MNEMONIC")
 
 
 def snapshot_file(api_path: str, suffix: str = ".json") -> Path:

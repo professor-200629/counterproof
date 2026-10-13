@@ -29,19 +29,32 @@ TIMEOUT_AFTER_COMMIT = [
 ]
 
 
+# Test-only credentials for the API's auth (auth.py). Without them every mutation is refused.
+OPERATOR_TOKEN = "test-operator-" + "o" * 24
+JUDGE_PASSCODE = "test-judge-passcode"
+OPERATOR_HEADERS = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
+
+
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("COUNTERPROOF_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("COUNTERPROOF_NETWORK", "offchain")
     monkeypatch.setenv("COUNTERPROOF_EVALUATOR_ADDRESS", EVALUATOR)
     monkeypatch.setenv("COUNTERPROOF_ENV_FILE", str(tmp_path / "no.env"))
+    monkeypatch.setenv("COUNTERPROOF_OPERATOR_TOKEN", OPERATOR_TOKEN)
+    monkeypatch.setenv("COUNTERPROOF_JUDGE_PASSCODE", JUDGE_PASSCODE)
     monkeypatch.delenv("COUNTERPROOF_CONTRACT", raising=False)
     monkeypatch.delenv("COUNTERPROOF_DISABLE_ISOLATION", raising=False)
+    for k in ("COUNTERPROOF_DAILY_TOKEN_CEILING", "COUNTERPROOF_MAX_QUEUED_JOBS", "COUNTERPROOF_ALLOWED_ORIGINS"):
+        monkeypatch.delenv(k, raising=False)
+    from counterproof.auth import LIMITER
     from counterproof.config import settings
 
+    LIMITER.reset()
     settings.cache_clear()
     yield
     settings.cache_clear()
+    LIMITER.reset()
 
 
 def make_spec(target="ref-purchasing-agent@1.0.0", rules=None, **extra):

@@ -25,7 +25,7 @@ import time
 import types
 
 import pytest
-from conftest import ALL_RULES, CHALLENGER, make_candidate, make_spec
+from conftest import ALL_RULES, CHALLENGER, OPERATOR_HEADERS, make_candidate, make_spec
 from fastapi.testclient import TestClient
 
 from counterproof import devchain
@@ -431,6 +431,48 @@ def test_missing_provider_credential_fails_without_signing(world):
     assert first.status_code == 202 and final.status_code == 503
     assert "cannot replay this live-model target" in final.json()["reason"] and "GROQ_API_KEY" in final.json()["reason"]
     assert signer_rows("signed") == []
+
+
+def test_operator_stop_fails_the_signers_replay_as_retryable_never_a_refusal(world, monkeypatch):
+    """The signer's model calls go through the same guard as the worker's (limits.py, on the
+    main database in the shared data directory): the operator stop and the global token ceiling
+    refuse them before the provider is called. The refusal is "unavailable", so the signer's
+    own replay is runner_failure and the request is answered "failed, retryable" - never a final
+    refusal of a finding that would have verified. Its calls are attributed to "signer"."""
+    from counterproof import limits, providers
+    from counterproof.db import connect
+
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "k" * 40)
+    monkeypatch.setenv("COUNTERPROOF_LLM_TPM", "0")
+
+    def no_provider(*_a, **_k):
+        raise AssertionError("a model call reached the provider")
+
+    monkeypatch.setattr(providers.httpx, "post", no_provider)
+    made = []
+
+    def real_broker(spec):  # the default factory: a ModelBroker over a real ChatClient
+        b = providers.broker_for_spec(spec, None)
+        made.append(b)
+        return b
+
+    conn = connect()
+    limits.set_stop(conn, True, "operator", "demo over")
+    client, app = signer(world, real_broker)
+    first, final = attest(client, app, world)
+    assert first.status_code == 202 and final.status_code == 503, final.text
+    out = final.json()
+    assert out["status"] == "failed" and out["retryable"] is True and "operator stop" in out["reason"]
+    assert out["verification"]["outcome"] == "runner_failure"
+    assert made and made[0].client.owner == "signer" and made[0].client.calls == 0
+    assert signer_rows("signed") == []
+    # the global ceiling refuses the same way once the stop is lifted
+    limits.set_stop(conn, False, "operator")
+    monkeypatch.setenv("COUNTERPROOF_DAILY_TOKEN_CEILING", "10")
+    limits.record_usage("judge:sess_x", None, "groq", "m", 6, 4)
+    _, again = attest(client, app, world)
+    assert again.status_code == 503 and again.json()["retryable"] is True and "cost ceiling reached" in again.json()["reason"]
+    assert again.json()["verification"]["attempt"] == 2  # retried, not refused for good
 
 
 def test_unauthenticated_requests_are_rejected(world):
@@ -895,7 +937,7 @@ def test_attestation_job_reports_refusals_failures_and_timeouts(world, monkeypat
     assert "did not verify" in acts["attestation.refused"] and "3 fresh stochastic replay(s)" in acts["attestation.verifying"]
 
     api._local.conn = None
-    with TestClient(api.app) as client:
+    with TestClient(api.app, headers=OPERATOR_HEADERS) as client:
         r = client.post(f"/api/evaluations/{ev['id']}/attest")
         again = client.post(f"/api/evaluations/{ev['id']}/attest")
         assert r.status_code == 202 and again.json()["job_id"] == r.json()["job_id"]
@@ -958,7 +1000,7 @@ def test_api_queues_the_attestation_and_serves_the_signers_evidence(world, monke
     assert e["outcome"] == "verified_violation" and e["attestation_job"]["status"] == "queued"
 
     api._local.conn = None
-    with TestClient(api.app) as client:
+    with TestClient(api.app, headers=OPERATOR_HEADERS) as client:
         r = client.post(f"/api/evaluations/{ev['id']}/attest")
         assert r.status_code == 202 and r.json()["job_id"] == e["attestation_job"]["id"]  # no duplicate job
         j = jobs.claim(w.conn, w.name)

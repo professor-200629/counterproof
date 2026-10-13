@@ -66,6 +66,37 @@ The web app offers a clearly labelled "Local dev account" wallet that only works
 Other modes: `scripts/dev.py offchain` (no chain, evidence only) and
 `scripts/dev.py testnet` (see below).
 
+### Who may change things
+
+Reading is open; starting runs, replays, regressions or anything else needs a session.
+
+- **Judges** use **Judge sign-in** in the header with the passcode
+  (`COUNTERPROOF_JUDGE_PASSCODE`; when it is not set, `dev.py` generates one per launch into
+  `data/judge.passcode` and says so on the console). A session lasts 8 hours and runs under
+  server limits: at most 50 sequences and 300 s per run, 2 active jobs and 200,000 model
+  tokens a day per session, and 8 active jobs and 500,000 tokens a day for all judge sessions
+  together (signing in again does not reset those). Live-model work runs only on the
+  configured provider/model: specs a judge creates use it at temperature 0 with at most 8
+  agent steps, the model-assisted generator always uses it, and a judge cannot start runs,
+  submissions or regressions on a challenge whose target names another model. The server
+  lowers larger budgets and shows the effective one.
+- **The operator** (you, and every script) sends `Authorization: Bearer
+  $COUNTERPROOF_OPERATOR_TOKEN`; `dev.py` generates the token per launch when unset and writes
+  it to `data/operator.token`, where the scripts read it. Only the operator can make the
+  challenger bot sign on-chain commits (gas).
+- **Secrets are long or ignored:** the API ignores an operator token shorter than 24
+  characters and a judge passcode shorter than 12, and `dev.py` refuses to start with one.
+  Behind the web server's `/api` proxy the API cannot tell browsers apart, so failed sign-ins
+  are slowed but the correct passcode is never locked out; the passcode's length is what
+  stops guessing.
+- **Stop everything:** `backend/.venv/Scripts/python scripts/operator.py stop "reason"`
+  refuses new jobs and model calls and cancels queued and running jobs (cooperatively: a
+  sequence or model call already in flight finishes first); `operator.py resume` and
+  `operator.py status` (queue, today's tokens against `COUNTERPROOF_DAILY_TOKEN_CEILING`).
+
+Limits, origins and hosts are configurable in `.env` (see `.env.example`). The web dev
+server listens on 127.0.0.1 only.
+
 ## Tests
 
 ```bash

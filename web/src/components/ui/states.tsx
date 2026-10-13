@@ -1,6 +1,6 @@
 import { CircleAlert, Inbox, SearchX, Unplug } from "lucide-react";
 import type { ReactNode } from "react";
-import { ApiError, isBackendUnreachable } from "@/lib/api";
+import { AUTH_REQUIRED_EVENT, ApiError, isBackendUnreachable } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { NOT_IN_SNAPSHOT, SNAPSHOT_MODE } from "@/lib/snapshot";
 
@@ -37,6 +37,15 @@ export function EmptyState({ title, description, action, icon, className, compac
 }
 
 // ---------------------------------------------------------------------------- error
+/** Headings for refusals by the server's auth and limits; the detail is always the server's own words. */
+const LIMIT_TITLES: Record<number, string> = {
+  401: "Sign-in required",
+  403: "Not allowed for this session",
+  413: "Request too large",
+  429: "Limit reached",
+  503: "Paused by the operator",
+};
+
 export interface ErrorStateProps {
   /** Any thrown value; ApiError shows the backend's own `detail`, status and path. */
   error: unknown;
@@ -62,7 +71,11 @@ export function ErrorState({ error, title, onRetry, className, compact }: ErrorS
         ? SNAPSHOT_MODE
           ? `Not found: ${NOT_IN_SNAPSHOT}`
           : "Not found"
-        : "Request failed");
+        : api && !SNAPSHOT_MODE && LIMIT_TITLES[api.status]
+          ? LIMIT_TITLES[api.status]
+          : "Request failed");
+  // A change refused for want of a session: offer the sign-in panel (the shell listens).
+  const signIn = api?.status === 401 && !SNAPSHOT_MODE && api.path !== "/session"; // not inside the sign-in panel itself
   return (
     <div
       role="alert"
@@ -84,6 +97,15 @@ export function ErrorState({ error, title, onRetry, className, compact }: ErrorS
               HTTP {api.status}
               {api.kind ? ` - ${api.kind}` : ""} - /api{api.path}
             </p>
+          ) : null}
+          {signIn ? (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: api }))}
+              className="mt-3 mr-2 inline-flex h-8 items-center rounded-md border border-line bg-surface px-3 text-xs font-medium text-fg hover:border-line-strong"
+            >
+              Sign in
+            </button>
           ) : null}
           {onRetry ? (
             <button

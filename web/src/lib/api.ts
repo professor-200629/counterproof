@@ -12,6 +12,12 @@
  * Snapshot mode (NEXT_PUBLIC_SNAPSHOT=1, see lib/snapshot.ts): every GET reads the recorded
  * response under /snapshot instead, a missing file is a 404 "not included in this recorded
  * snapshot", and every mutation throws a read-only ApiError without any request.
+ *
+ * Authentication (live mode): reads are public; every change needs a session. The judge signs
+ * in with a passcode (POST /api/session); the backend sets an HttpOnly, SameSite=Strict cookie
+ * the browser sends on same-origin /api requests, and returns a CSRF token that this module
+ * keeps in memory only and sends as X-CSRF-Token on every mutation. A 401 on a mutation
+ * dispatches AUTH_REQUIRED_EVENT so the shell can open the sign-in panel.
  */
 
 import { NOT_IN_SNAPSHOT, READ_ONLY_DETAIL, READ_ONLY_KIND, SNAPSHOT_MODE, snapshotFile } from "./snapshot";
@@ -495,9 +501,14 @@ export interface Run extends RunSummary {
   job_id: string | null;
   strategy_version: string;
   params: JsonObject;
+  /** The effective budget: the server clamps what was asked to the caller's role caps. */
   budget: RunBudget;
   provenance: RunProvenance | null;
   job: Job | null;
+  /** Who queued it: "operator", or "judge:sess_..." for a judge session. */
+  owner?: string | null;
+  /** POST only: budget fields the server lowered, {field: {requested, effective}}. */
+  budget_clamped?: Record<string, { requested: JsonValue; effective: number }>;
 }
 
 export interface RunCreate {
@@ -994,10 +1005,42 @@ function withQuery(path: string, query?: Query): string {
 }
 
 export interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   body?: unknown;
   query?: Query;
   signal?: AbortSignal;
+}
+
+// ---------------------------------------------------------------------------- session (CSRF)
+/** Header the backend compares with the session's CSRF token on every cookie-authenticated change. */
+export const CSRF_HEADER = "X-CSRF-Token";
+/** window event: a change was refused with 401 (detail: the ApiError). The shell opens sign-in. */
+export const AUTH_REQUIRED_EVENT = "counterproof:auth-required";
+
+/** The current session's CSRF token: in memory only (never storage), read from GET /api/session. */
+let csrfToken: string | null = null;
+let csrfLoad: Promise<string | null> | null = null;
+
+export function setCsrfToken(token: string | null | undefined): void {
+  csrfToken = token ?? null;
+}
+
+export function getCsrfToken(): string | null {
+  return csrfToken;
+}
+
+/** The CSRF token, fetched once from GET /api/session when a page was reloaded with a session cookie. */
+async function ensureCsrfToken(): Promise<string | null> {
+  if (csrfToken || typeof window === "undefined") return csrfToken;
+  csrfLoad ??= fetch(`${apiBase()}/api/session`, { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store" })
+    .then(async (r) => (r.ok ? ((await r.json()) as { csrf_token?: string | null }).csrf_token ?? null : null))
+    .catch(() => null)
+    .finally(() => {
+      csrfLoad = null;
+    });
+  const t = await csrfLoad;
+  if (t && !csrfToken) csrfToken = t;
+  return csrfToken;
 }
 
 /** Low-level request. Throws ApiError with the backend's `detail` on any non-2xx. */
@@ -1005,14 +1048,24 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   if (SNAPSHOT_MODE) return snapshotRequest<T>(path, opts);
   const fullPath = withQuery(path, opts.query);
   const url = `${apiBase()}/api${fullPath}`;
+  const method = opts.method ?? (opts.body === undefined ? "GET" : "POST");
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  // Signing in is the one change that needs no session (and gets its token in the response).
+  const signingIn = method === "POST" && fullPath === "/session";
+  if (method !== "GET" && !signingIn) {
+    const token = await ensureCsrfToken();
+    if (token) headers[CSRF_HEADER] = token;
+  }
   let res: Response;
   try {
     res = await fetch(url, {
-      method: opts.method ?? (opts.body === undefined ? "GET" : "POST"),
-      headers: opts.body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
+      method,
+      headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       signal: opts.signal,
       cache: "no-store",
+      credentials: "same-origin",
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
@@ -1037,15 +1090,29 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     if (!detail) detail = `HTTP ${res.status} ${res.statusText}`.trim();
     // The Next proxy answers 500 with an empty/HTML body when the backend is down.
     const unreachable = (res.status === 500 || res.status === 502 || res.status === 504) && !obj;
-    throw new ApiError({
+    const error = new ApiError({
       status: unreachable ? 0 : res.status,
       detail: unreachable ? `Backend unreachable through the /api proxy (HTTP ${res.status}). Is the API running on BACKEND_URL?` : detail,
       kind: obj && typeof obj.kind === "string" ? obj.kind : null,
       path: fullPath,
       body: parsed,
     });
+    if (method !== "GET" && !signingIn) {
+      if (res.status === 401) {
+        setCsrfToken(null);
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: error }));
+      } else if (res.status === 403 && /X-CSRF-Token/i.test(detail)) {
+        setCsrfToken(null); // a stale token: the next attempt re-reads it from GET /api/session
+      }
+    }
+    throw error;
   }
   return parsed as T;
+}
+
+/** True when a change was refused for want of a session (sign in and try again). */
+export function isAuthRequired(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 /**
@@ -1129,8 +1196,97 @@ export interface Erc8004Record {
   registries_source?: string;
 }
 
+// ---------------------------------------------------------------------------- session
+/** Server caps for a role (backend limits.py), as GET /api/session reports them. */
+export interface RoleLimits {
+  max_sequences: number;
+  max_wall_seconds: number;
+  max_model_calls: number;
+  max_model_tokens: number;
+  max_actions: number;
+  max_sequences_per_call: number;
+  /** 0 = no per-session limit (the operator). */
+  max_active_jobs: number;
+  /** Model tokens per session per UTC day; 0 = no per-session limit. */
+  daily_tokens: number;
+  /** Every session of this role together (signing in again does not reset these); 0 = none. */
+  all_sessions_active_jobs?: number;
+  all_sessions_daily_tokens?: number;
+  max_queued_jobs: number;
+  /** Judges only: the provider/model their live-model work is fixed to. */
+  model?: string;
+  temperature?: number;
+  max_steps?: number;
+}
+
+export interface SessionUsage {
+  active_jobs: number;
+  max_active_jobs: number | null;
+  tokens_today: number;
+  daily_tokens: number | null;
+  /** The lower of this session's own budget and what all judge sessions together have left. */
+  tokens_remaining: number | null;
+  /** Judges: all judge sessions together. */
+  all_sessions_tokens_today?: number;
+  all_sessions_daily_tokens?: number | null;
+  all_sessions_active_jobs?: number;
+  all_sessions_max_active_jobs?: number | null;
+  global_tokens_today: number;
+  global_daily_ceiling: number;
+  day: string;
+}
+
+export interface OperatorStopState {
+  active: boolean;
+  by: string;
+  reason: string;
+  at: UnixSeconds;
+}
+
+/** GET /api/session (and the response to signing in). */
+export type SessionInfo =
+  | {
+      authenticated: false;
+      role: null;
+      auth_configured: boolean;
+      operator_stop: OperatorStopState | null;
+      limits: { judge: RoleLimits };
+    }
+  | {
+      authenticated: true;
+      role: "judge" | "operator";
+      via: "cookie" | "bearer";
+      owner: string;
+      expires_at: UnixSeconds | null;
+      csrf_token: string | null;
+      operator_stop: OperatorStopState | null;
+      limits: RoleLimits;
+      usage: SessionUsage;
+    };
+
+/** The judge caps that apply when nobody is signed in yet, or the session's own. */
+export function sessionLimits(session: SessionInfo | null | undefined): RoleLimits | null {
+  if (!session) return null;
+  return session.authenticated ? session.limits : session.limits.judge;
+}
+
 // ---------------------------------------------------------------------------- endpoints
 export const api = {
+  getSession: () => apiRequest<SessionInfo>("/session"),
+  /** Sign in with the judge passcode; sets the HttpOnly session cookie and keeps the CSRF token in memory. */
+  signIn: async (passcode: string) => {
+    const s = await apiRequest<SessionInfo>("/session", { method: "POST", body: { passcode } });
+    if (s.authenticated) setCsrfToken(s.csrf_token);
+    return s;
+  },
+  signOut: async () => {
+    try {
+      return await apiRequest<{ signed_out: boolean }>("/session", { method: "DELETE" });
+    } finally {
+      setCsrfToken(null);
+    }
+  },
+
   health: () => apiRequest<{ ok: boolean; version: string; time: UnixSeconds }>("/health"),
   getConfig: () => apiRequest<AppConfig>("/config"),
   getErc8004: () => apiRequest<Erc8004Record>("/erc8004"),
