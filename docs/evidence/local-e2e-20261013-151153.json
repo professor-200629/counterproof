@@ -1,0 +1,209 @@
+{
+  "format": "counterproof.local-e2e/v1",
+  "network": "anvil-local (chain 31337, --network monad) - NOT Monad testnet",
+  "note": "All transactions are on a disposable local chain. Keys are anvil's public dev keys.",
+  "result": "pass",
+  "steps": [
+    {
+      "step": "deploy",
+      "t": 1791884519,
+      "contract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "chain_id": 31337,
+      "network": "anvil-local (--network monad), not Monad testnet"
+    },
+    {
+      "step": "config",
+      "t": 1791884527,
+      "network": "Local anvil chain (31337) - not Monad testnet",
+      "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "isolation": true
+    },
+    {
+      "step": "fund",
+      "t": 1791884527,
+      "challenge": 1,
+      "onchain_id": "1",
+      "tx": "0x794d0aae41fa52dd3d4165a69df071d6612cfe4556df78f576aa38db7113ec20",
+      "block": 2,
+      "reward_wei": 10000000000000000,
+      "network": "anvil-local 31337 (not Monad)",
+      "spec_digest": "sha256:7d81cf68e8d8b2a2b9cca8c941ea1eea0beb9e23192d826cb948c6db5ea57c0f"
+    },
+    {
+      "step": "search",
+      "t": 1791884529,
+      "strategy": "sequence-explorer",
+      "status": "candidate_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [
+        "R1"
+      ],
+      "duration_ms": 911
+    },
+    {
+      "step": "search",
+      "t": 1791884529,
+      "strategy": "retry-replay",
+      "status": "candidate_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [
+        "R3"
+      ],
+      "duration_ms": 348
+    },
+    {
+      "step": "search",
+      "t": 1791884529,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 290
+    },
+    {
+      "step": "commit",
+      "t": 1791884530,
+      "submission_id": "0x034d74ae30cec6e160afceef1dfced6bb1f551998a30528922645a27a245b578",
+      "tx": "0x1b4b00a28e51a887c5fcf554709b2cf73cad36e3282bb60165bab18427cd3230",
+      "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+    },
+    {
+      "step": "replay",
+      "t": 1791884531,
+      "outcome": "verified_violation",
+      "evidence": "sha256:11b8f53ae333b15df995d8282b7125f1e682dba85b707e67610a1bb51f753c80",
+      "replays": 2
+    },
+    {
+      "step": "duplicate-submit",
+      "t": 1791884531,
+      "same_evaluation": true,
+      "duplicate": true
+    },
+    {
+      "step": "attest",
+      "t": 1791884534,
+      "signer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "expiry": 1791885719,
+      "signature": "0xd08aa11639edb792cc...",
+      "signer_evidence": "sha256:d39c4d04767d7c68535a9b328f203ee8f9a7975c9280fe51a4342950a6f56f71",
+      "signer_replays": "2 of 2 (required 2)",
+      "worker_evidence": "sha256:11b8f53ae333b15df995d8282b7125f1e682dba85b707e67610a1bb51f753c80"
+    },
+    {
+      "step": "negative: altered recipient",
+      "t": 1791884534,
+      "reverted": true
+    },
+    {
+      "step": "settle",
+      "t": 1791884535,
+      "tx": "0x77887b9b158fccf30eff9faa719776e13a0781472e008817b903e50d37c0b7c2",
+      "block": 5,
+      "relayed_by": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "reward_wei": "10000000000000000",
+      "status": "confirmed"
+    },
+    {
+      "step": "negative: settle twice",
+      "t": 1791884535,
+      "reverted": true
+    },
+    {
+      "step": "withdraw",
+      "t": 1791884535,
+      "tx": "0x0250d45bc6f2d7c48384fb37dc325f326947eb82a008f6b25c129992689a698e",
+      "amount_wei": "10000000000000000",
+      "balance_delta_plus_fee": 10000000000000000,
+      "fee_billed_on_gas_limit": 99334410029470,
+      "gas_limit": 68131,
+      "gas_used": 52870
+    },
+    {
+      "step": "negative: submit after settlement",
+      "t": 1791884535,
+      "status": 400,
+      "detail": "challenge is settled; submissions are closed"
+    },
+    {
+      "step": "retest repaired 1.1.0",
+      "t": 1791884537,
+      "outcome": "not_reproduced",
+      "evidence": "sha256:40e927b7b4b742c401f5b765f2409254c555657cfd0c0f76c46b884360dde391",
+      "spec": "sha256:367c79e694d40402ea3ef7c833e585610090b2481e41df58d58dfb8e93b23677"
+    },
+    {
+      "step": "export",
+      "t": 1791884537,
+      "files": [
+        "regression-20261013-151153.json",
+        "test_regression_20261013_151153.py"
+      ]
+    },
+    {
+      "step": "fund",
+      "t": 1791884537,
+      "challenge": 2,
+      "onchain_id": "2",
+      "tx": "0x255dd06410a83a4a3cf6c53d421012a0cbabbbc702fb183ddd86b86948e6ec0d",
+      "block": 8,
+      "reward_wei": 5000000000000000,
+      "network": "anvil-local 31337 (not Monad)",
+      "spec_digest": "sha256:ec95495549711ebd6ea9ba3f4bb5fe3f7a2b284818b31b48637cb25bb858ed35"
+    },
+    {
+      "step": "search",
+      "t": 1791884538,
+      "strategy": "sequence-explorer",
+      "status": "no_violation_found",
+      "sequences": 150,
+      "termination": "sequence budget exhausted",
+      "rules": [],
+      "duration_ms": 842
+    },
+    {
+      "step": "search",
+      "t": 1791884539,
+      "strategy": "retry-replay",
+      "status": "no_violation_found",
+      "sequences": 27,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 344
+    },
+    {
+      "step": "search",
+      "t": 1791884539,
+      "strategy": "merchant-content",
+      "status": "no_violation_found",
+      "sequences": 30,
+      "termination": "search space exhausted",
+      "rules": [],
+      "duration_ms": 331
+    },
+    {
+      "step": "negative: refund before window",
+      "t": 1791884539,
+      "reverted": true
+    },
+    {
+      "step": "refund",
+      "t": 1791884540,
+      "tx": "0xf0a2c022e43ea58cf3f2bc4b56219a43877dace3b8004e66e3dc303499621784",
+      "publisher": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "reward_wei": "5000000000000000"
+    },
+    {
+      "step": "final",
+      "t": 1791884540,
+      "challenge_statuses": {
+        "2": "refunded",
+        "1": "settled"
+      }
+    }
+  ]
+}
